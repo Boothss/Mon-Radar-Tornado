@@ -1,0 +1,28 @@
+name: VORTEX — Tornado Monitor 24/7
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # toutes les 5 minutes, 24h/24
+  workflow_dispatch:          # permet aussi de lancer manuellement
+
+jobs:
+  check-alerts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run tornado monitor
+        env:
+          EMAIL_SENDER:   ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+        run: python monitor.py
