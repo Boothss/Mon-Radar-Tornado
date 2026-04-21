@@ -8,6 +8,105 @@ import json
 import csv
 import io
 import math
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+# ==========================================
+# 📧  EMAIL CONFIG
+# ==========================================
+EMAIL_SENDER   = "alexbailly82@gmail.com"
+EMAIL_RECEIVER = "alexbailly82@gmail.com"
+EMAIL_PASSWORD = "ojfwwjozkjxjlszn"
+
+# Alertes qui déclenchent un email (les plus dangereuses)
+EMAIL_TRIGGER_EVENTS = [
+    "Tornado Warning",
+    "Tornado Emergency",
+]
+
+def send_alert_email(new_alerts):
+    """Envoie un email récapitulatif des nouvelles alertes détectées."""
+    if not new_alerts:
+        return False
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"🌪️ VORTEX ALERT — {len(new_alerts)} nouvelle(s) alerte(s) tornade"
+        msg["From"]    = EMAIL_SENDER
+        msg["To"]      = EMAIL_RECEIVER
+
+        # Contenu texte plain
+        plain_lines = [f"VORTEX — Severe Weather Intelligence\n{'='*45}"]
+        for a in new_alerts:
+            plain_lines.append(
+                f"\n⚠ {a['event']}\n"
+                f"Zone     : {a['area']}\n"
+                f"Sévérité : {a['severity']} | Certitude : {a['certainty']}\n"
+                f"Heure    : {a['onset']}\n"
+                f"Instructions : {a['instruction'][:200]}\n"
+                f"{'-'*45}"
+            )
+        plain_lines.append("\nSource : NOAA / National Weather Service (USA)")
+        plain_text = "\n".join(plain_lines)
+
+        # Contenu HTML
+        alert_rows = ""
+        for a in new_alerts:
+            color = "#FF3B30" if a["event"] == "Tornado Emergency" else "#FF6B35"
+            alert_rows += f"""
+            <div style="background:#0A0F1E;border-left:4px solid {color};border-radius:8px;
+                        padding:16px 20px;margin-bottom:16px;font-family:monospace;">
+              <div style="color:{color};font-size:11px;letter-spacing:.1em;
+                          text-transform:uppercase;margin-bottom:8px;">{a['event']}</div>
+              <div style="color:#E2E8F0;font-size:16px;font-weight:600;margin-bottom:12px;">{a['area']}</div>
+              <table style="width:100%;font-size:13px;color:#94A3B8;border-collapse:collapse;">
+                <tr><td style="padding:4px 0;width:120px;">Sévérité</td>
+                    <td style="color:#E2E8F0;">{a['severity']}</td></tr>
+                <tr><td style="padding:4px 0;">Certitude</td>
+                    <td style="color:#E2E8F0;">{a['certainty']}</td></tr>
+                <tr><td style="padding:4px 0;">Heure UTC</td>
+                    <td style="color:#E2E8F0;">{a['onset']}</td></tr>
+              </table>
+              <div style="margin-top:12px;padding:10px 14px;background:#050810;border-radius:6px;
+                          font-size:12px;color:#CBD5E1;line-height:1.6;">
+                {a['instruction'][:300]}{'…' if len(a['instruction']) > 300 else ''}
+              </div>
+            </div>"""
+
+        html_body = f"""
+        <html><body style="background:#050810;margin:0;padding:24px;font-family:'Segoe UI',sans-serif;">
+          <div style="max-width:600px;margin:0 auto;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
+              <div style="background:linear-gradient(135deg,#FF3B30,#FF6B35);
+                          border-radius:10px;width:40px;height:40px;display:flex;
+                          align-items:center;justify-content:center;font-size:20px;">🌪</div>
+              <div>
+                <div style="color:#FFFFFF;font-size:18px;font-weight:700;letter-spacing:.12em;">VORTEX</div>
+                <div style="color:#4A6FA5;font-size:10px;letter-spacing:.1em;">SEVERE WEATHER INTELLIGENCE</div>
+              </div>
+            </div>
+            <div style="color:#FF3B30;font-size:13px;font-family:monospace;
+                        letter-spacing:.1em;margin-bottom:16px;">
+              ● {len(new_alerts)} NOUVELLE(S) ALERTE(S) DÉTECTÉE(S)
+            </div>
+            {alert_rows}
+            <div style="margin-top:24px;padding-top:16px;border-top:1px solid #0F1E38;
+                        font-size:11px;color:#374151;font-family:monospace;">
+              Source : NOAA / National Weather Service (USA) · {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
+            </div>
+          </div>
+        </body></html>"""
+
+        msg.attach(MIMEText(plain_text, "plain"))
+        msg.attach(MIMEText(html_body, "html"))
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+            server.sendmail(EMAIL_SENDER, EMAIL_RECEIVER, msg.as_string())
+        return True
+    except Exception as e:
+        st.toast(f"Erreur email : {e}", icon="❌")
+        return False
 
 # ==========================================
 # ⚙️  PAGE CONFIG — must be first
@@ -570,6 +669,12 @@ if "filter_sev" not in st.session_state:
     st.session_state.filter_sev = "All"
 if "show_events" not in st.session_state:
     st.session_state.show_events = set(NWS_EVENTS)
+if "known_alert_ids" not in st.session_state:
+    st.session_state.known_alert_ids = set()
+if "email_enabled" not in st.session_state:
+    st.session_state.email_enabled = True
+if "emails_sent" not in st.session_state:
+    st.session_state.emails_sent = 0
 
 # ==========================================
 # 🖥️  TOPBAR
@@ -599,6 +704,36 @@ with st.spinner(""):
 
 # Sort by severity
 all_features.sort(key=lambda f: SEVERITY_ORDER.get(f["properties"].get("severity","Unknown"), 4))
+
+# ==========================================
+# 📧  DÉTECTION NOUVELLES ALERTES + EMAIL
+# ==========================================
+if st.session_state.email_enabled:
+    new_alerts_to_notify = []
+    for f in all_features:
+        props = f["properties"]
+        fid   = props.get("id", "") or f.get("id", "")
+        event = props.get("event", "")
+        if event in EMAIL_TRIGGER_EVENTS and fid and fid not in st.session_state.known_alert_ids:
+            onset_dt = parse_time(props.get("onset"))
+            new_alerts_to_notify.append({
+                "event":       event,
+                "area":        props.get("areaDesc", "Zone inconnue"),
+                "severity":    props.get("severity", "—"),
+                "certainty":   props.get("certainty", "—"),
+                "onset":       onset_dt.strftime("%Y-%m-%d %H:%M UTC") if onset_dt else "—",
+                "instruction": props.get("instruction", "") or "Mettez-vous à l'abri immédiatement.",
+            })
+            st.session_state.known_alert_ids.add(fid)
+
+    if new_alerts_to_notify:
+        sent = send_alert_email(new_alerts_to_notify)
+        if sent:
+            st.session_state.emails_sent += len(new_alerts_to_notify)
+            st.toast(
+                f"📧 Email envoyé — {len(new_alerts_to_notify)} nouvelle(s) alerte(s) !",
+                icon="🌪️"
+            )
 
 # ==========================================
 # 📊  COMPUTE STATS
@@ -654,8 +789,8 @@ with mc5:
 # ==========================================
 # 🕒  AUTO-REFRESH BAR
 # ==========================================
-st.markdown('<div style="padding: 0.75rem 2rem 0;">', unsafe_allow_html=True)
-col_refresh, col_interval = st.columns([3, 1])
+st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
+col_refresh, col_interval, col_email = st.columns([3, 1, 1])
 
 with col_refresh:
     elapsed  = int(time.time() - st.session_state.last_fetch)
@@ -690,7 +825,24 @@ with col_interval:
         st.session_state.refresh_interval = interval_choice
         st.session_state.last_fetch = time.time()
 
-st.markdown('</div>', unsafe_allow_html=True)
+with col_email:
+    email_on = st.toggle(
+        "📧 Alertes email",
+        value=st.session_state.email_enabled,
+        help="Reçoit un email à alexbailly82@gmail.com dès qu'un Tornado Warning ou Tornado Emergency apparaît"
+    )
+    st.session_state.email_enabled = email_on
+    if email_on:
+        st.markdown(
+            f'<div style="font-size:10px;font-family:monospace;color:#22C55E;margin-top:2px;">'
+            f'✓ ACTIF · {st.session_state.emails_sent} envoyé(s)</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            '<div style="font-size:10px;font-family:monospace;color:#4A6FA5;margin-top:2px;">⏸ DÉSACTIVÉ</div>',
+            unsafe_allow_html=True
+        )
 
 # ==========================================
 # 🗺️  MAIN CONTENT: MAP + ALERT LIST
