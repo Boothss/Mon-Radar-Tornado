@@ -620,45 +620,36 @@ tstorm_warnings   = event_counts.get("Severe Thunderstorm Warning", 0)
 total_active      = len(all_features)
 
 # ==========================================
-# 📈  METRIC CARDS
+# 📈  METRIC CARDS  (native columns — no dynamic HTML)
 # ==========================================
-st.markdown('<div style="padding: 1.25rem 2rem 0;">', unsafe_allow_html=True)
+st.markdown("<div style='height:1.25rem'></div>", unsafe_allow_html=True)
 
-sev_class_val  = "danger"  if tornado_warnings > 0 else "success"
-sev_class_emrg = "danger"  if tornado_emergencies > 0 else "success"
-sev_class_wch  = "warning" if tornado_watches > 0 else "success"
-sev_class_ts   = "warning" if tstorm_warnings > 0 else "success"
+def metric_card(label, value, color, sub):
+    st.markdown(f"""
+    <div class="metric-card" style="border-top:2px solid {color}; border-radius:12px;
+         background:#080D1A; border:1px solid #0F1E38; padding:1rem 1.25rem;
+         border-top:2px solid {color};">
+      <div class="metric-label">{label}</div>
+      <div class="metric-value" style="color:{color};">{value}</div>
+      <div class="metric-sub">{sub}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-st.markdown(f"""
-<div class="metric-grid">
-  <div class="metric-card danger">
-    <div class="metric-label">Tornado Warnings</div>
-    <div class="metric-value danger">{tornado_warnings}</div>
-    <div class="metric-sub">active polygons</div>
-  </div>
-  <div class="metric-card {'danger' if tornado_emergencies>0 else 'neutral'}">
-    <div class="metric-label">Tornado Emergencies</div>
-    <div class="metric-value {'danger' if tornado_emergencies>0 else ''}">{tornado_emergencies}</div>
-    <div class="metric-sub">highest severity</div>
-  </div>
-  <div class="metric-card warning">
-    <div class="metric-label">Tornado Watches</div>
-    <div class="metric-value {'warning' if tornado_watches>0 else ''}">{tornado_watches}</div>
-    <div class="metric-sub">counties at risk</div>
-  </div>
-  <div class="metric-card {'warning' if tstorm_warnings>0 else 'neutral'}">
-    <div class="metric-label">Severe T-Storm Warnings</div>
-    <div class="metric-value {'warning' if tstorm_warnings>0 else ''}">{tstorm_warnings}</div>
-    <div class="metric-sub">active cells</div>
-  </div>
-  <div class="metric-card info">
-    <div class="metric-label">Total Active Alerts</div>
-    <div class="metric-value">{total_active}</div>
-    <div class="metric-sub">all event types</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
+mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+with mc1:
+    c = "#FF3B30" if tornado_warnings > 0 else "#22C55E"
+    metric_card("TORNADO WARNINGS", tornado_warnings, c, "active polygons")
+with mc2:
+    c = "#FF3B30" if tornado_emergencies > 0 else "#4A6FA5"
+    metric_card("TORNADO EMERGENCIES", tornado_emergencies, c, "highest severity")
+with mc3:
+    c = "#F59E0B" if tornado_watches > 0 else "#4A6FA5"
+    metric_card("TORNADO WATCHES", tornado_watches, c, "counties at risk")
+with mc4:
+    c = "#F59E0B" if tstorm_warnings > 0 else "#4A6FA5"
+    metric_card("SEVERE T-STORM WARN.", tstorm_warnings, c, "active cells")
+with mc5:
+    metric_card("TOTAL ACTIVE ALERTS", total_active, "#3B82F6", "all event types")
 
 # ==========================================
 # 🕒  AUTO-REFRESH BAR
@@ -739,16 +730,17 @@ with col_map:
         use_container_width=True,
     )
 
-    st.markdown(f"""
-    <div style="display:flex; gap:12px; margin-top:8px; flex-wrap:wrap;">
-      {''.join([
-          f'<span style="font-size:11px;font-family:monospace;padding:3px 10px;border-radius:4px;'
-          f'background:rgba(255,255,255,0.03);border:1px solid #1A2540;color:#4A6FA5;">'
-          f'<span style="color:{EVENT_COLORS.get(e,"#6B7280")};">■</span> {e} ({event_counts.get(e,0)})</span>'
-          for e in NWS_EVENTS
-      ])}
-    </div>
-    """, unsafe_allow_html=True)
+    legend_parts = []
+    for e in NWS_EVENTS:
+        col_hex = EVENT_COLORS.get(e, "#6B7280")
+        cnt = event_counts.get(e, 0)
+        legend_parts.append(
+            f'<span style="font-size:11px;font-family:monospace;padding:3px 10px;border-radius:4px;'
+            f'background:rgba(255,255,255,0.03);border:1px solid #1A2540;color:#4A6FA5;">'
+            f'<span style="color:{col_hex};">&#9632;</span> {e} ({cnt})</span>'
+        )
+    legend_html = '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">' + "".join(legend_parts) + "</div>"
+    st.markdown(legend_html, unsafe_allow_html=True)
 
 
 # ---- RIGHT: ALERT LOG ----
@@ -765,13 +757,15 @@ with col_list:
     if sev_filter != "All":
         filtered = [f for f in all_features if f["properties"].get("severity") == sev_filter]
 
-    st.markdown(f"""
-    <div class="panel" style="min-height:540px;">
-      <div class="section-header">
-        <span class="section-title">ALERT LOG</span>
-        <span class="section-badge">{len(filtered)} EVENTS</span>
-      </div>
-    """, unsafe_allow_html=True)
+    n_filtered = len(filtered)
+    hdr = (
+        f'<div class="panel" style="min-height:540px;">'
+        f'<div class="section-header">'
+        f'<span class="section-title">ALERT LOG</span>'
+        f'<span class="section-badge">{n_filtered} EVENTS</span>'
+        f'</div>'
+    )
+    st.markdown(hdr, unsafe_allow_html=True)
 
     if not filtered:
         st.markdown("""
@@ -832,36 +826,40 @@ with col_list:
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
-# 📈  SPARKLINE TIMELINE
+# 📈  SPARKLINE TIMELINE  (via components to avoid HTML escaping)
 # ==========================================
-st.markdown('<div style="padding: 0.5rem 2rem 0;">', unsafe_allow_html=True)
+import streamlit.components.v1 as components
+
 buckets = build_sparkline(all_features)
 max_b = max(buckets) if max(buckets) > 0 else 1
-
-bars_html = ""
 now_h = datetime.now(timezone.utc).hour
+
+bars_html_parts = []
 for i, b in enumerate(buckets):
     h = (now_h - 23 + i) % 24
-    height_pct = max(8, int((b / max_b) * 36))
+    height_px = max(8, int((b / max_b) * 40))
     color = "#FF3B30" if b >= 3 else "#F59E0B" if b >= 1 else "#1A2540"
-    bars_html += f"""
-    <div class="timeline-bar-wrap" title="{h:02d}:00 UTC — {b} alert(s)">
-      <div class="timeline-bar" style="height:{height_pct}px; background:{color}; opacity:{'1' if i==23 else '0.7'};"></div>
-      <div class="timeline-hour">{"NOW" if i==23 else f"{h:02d}"}</div>
-    </div>"""
+    opacity = "1.0" if i == 23 else "0.7"
+    label = "NOW" if i == 23 else f"{h:02d}"
+    bars_html_parts.append(
+        f'<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;" title="{h:02d}:00 UTC - {b} alert(s)">'
+        f'<div style="width:100%;height:{height_px}px;background:{color};opacity:{opacity};border-radius:2px 2px 0 0;"></div>'
+        f'<div style="font-size:9px;font-family:monospace;color:#374151;">{label}</div>'
+        f'</div>'
+    )
 
-st.markdown(f"""
-<div class="panel" style="padding:1rem 1.25rem;">
-  <div class="section-header">
-    <span class="section-title">ALERT ACTIVITY — LAST 24H (ESTIMATED)</span>
-    <span class="section-badge">{total_active} ACTIVE NOW</span>
+sparkline_html = """
+<div style="background:#080D1A;border:1px solid #0F1E38;border-radius:16px;padding:1rem 1.25rem;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+    <span style="font-size:11px;font-family:monospace;letter-spacing:.15em;color:#4A6FA5;">ALERT ACTIVITY — LAST 24H</span>
+    <span style="font-size:10px;font-family:monospace;padding:3px 10px;border-radius:20px;background:#0F1E38;color:#4A6FA5;border:1px solid #1A2540;">""" + str(total_active) + """ ACTIVE NOW</span>
   </div>
-  <div class="timeline-container">
-    {bars_html}
+  <div style="display:flex;align-items:flex-end;gap:3px;height:56px;">
+""" + "".join(bars_html_parts) + """
   </div>
 </div>
-""", unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
+"""
+components.html(sparkline_html, height=110, scrolling=False)
 
 # ==========================================
 # 💾  EXPORT + MANUAL REFRESH
