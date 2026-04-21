@@ -93,13 +93,13 @@ if weather_data:
     col_map, col_list = st.columns([2, 1]) # La carte prend 2/3 de l'écran
 
     with col_map:
-        st.subheader("📡 Radar Spatial (Polygones de Danger)")
+        st.subheader("Radar Spatial (Polygones de Danger)")
         radar_map = create_tornado_map(weather_data)
         # Affichage de la carte Folium DANS Streamlit
         st_folium(radar_map, width="100%", height=500, returned_objects=[])
 
     with col_list:
-        st.subheader("🚨 Logs d'Alertes")
+        st.subheader("Logs d'Alertes")
         if active_count == 0:
             st.success("Atmosphère stable. Aucune alerte tornade en cours.")
         else:
