@@ -367,46 +367,6 @@ def format_time_ago(dt):
 # ==========================================
 # 🌪️  TORNADO LIVE POSITION & TRAJECTORY
 # ==========================================
-SPC_REPORTS_URL = "https://www.spc.noaa.gov/climo/reports/today_filtered.csv"
-
-@st.cache_data(ttl=60)
-def fetch_spc_tornado_reports():
-    """Rapports de tornades confirmées SPC du jour (positions GPS réelles)."""
-    try:
-        r = requests.get(SPC_REPORTS_URL, timeout=10,
-                         headers={"User-Agent": "VORTEX-SWI/2.0"})
-        r.raise_for_status()
-        reports = []
-        lines = r.text.strip().split('\n')
-        # Cherche la section Tornado (après la ligne "Tornado")
-        in_tornado_section = False
-        for line in lines:
-            line = line.strip()
-            if line.lower().startswith("time,f_scale") or line.lower().startswith("time,magnitude"):
-                in_tornado_section = True
-                continue
-            if in_tornado_section and line == "":
-                in_tornado_section = False
-                continue
-            if in_tornado_section and line:
-                parts = line.split(',')
-                if len(parts) >= 7:
-                    try:
-                        reports.append({
-                            'time':     parts[0].strip(),
-                            'f_scale':  parts[1].strip(),
-                            'location': parts[2].strip(),
-                            'county':   parts[3].strip(),
-                            'state':    parts[4].strip(),
-                            'lat':      float(parts[5].strip()),
-                            'lon':      float(parts[6].strip()),
-                            'comments': parts[7].strip() if len(parts) > 7 else '',
-                        })
-                    except (ValueError, IndexError):
-                        pass
-        return reports
-    except Exception:
-        return []
 
 def compute_centroid(coords):
     """Calcule le centroïde d'un polygone GeoJSON → (lat, lon)."""
@@ -458,7 +418,7 @@ def update_trajectories(current_positions):
 # ==========================================
 # 🗺️  MAP BUILDER  (avec position live + trajectoire + SPC)
 # ==========================================
-def build_map(features, show_events, tornado_positions, spc_reports, trajectories):
+def build_map(features, show_events, tornado_positions, trajectories):
     m = folium.Map(
         location=[38.0, -95.0],
         zoom_start=4,
@@ -586,35 +546,6 @@ def build_map(features, show_events, tornado_positions, spc_reports, trajectorie
             ),
         ).add_to(m)
 
-    # ── RAPPORTS SPC (tornades confirmées du jour) ────────────────
-    for rep in spc_reports:
-        if rep['lat'] == 0 and rep['lon'] == 0:
-            continue
-        popup_html = f"""
-        <div style="font-family:monospace;background:#080D1A;color:#E2E8F0;
-                    padding:12px;border-radius:8px;border:1px solid #F59E0B;min-width:200px;">
-          <div style="color:#F59E0B;font-size:10px;letter-spacing:.1em;margin-bottom:6px;">
-            📍 RAPPORT SPC CONFIRMÉ
-          </div>
-          <div style="font-size:13px;font-weight:600;">{rep['location']}, {rep['state']}</div>
-          <div style="font-size:11px;color:#94A3B8;margin-top:4px;">
-            Magnitude : <strong style="color:#FBB040;">{rep['f_scale'] or 'NC'}</strong>
-            &nbsp;·&nbsp; {rep['time']} UTC
-          </div>
-          {'<div style="font-size:11px;color:#CBD5E1;margin-top:6px;">'+rep["comments"][:120]+'</div>' if rep['comments'] else ''}
-        </div>"""
-        folium.CircleMarker(
-            location=[rep['lat'], rep['lon']],
-            radius=7,
-            color="#F59E0B",
-            weight=2,
-            fill=True,
-            fill_color="#F59E0B",
-            fill_opacity=0.75,
-            popup=folium.Popup(popup_html, max_width=280),
-            tooltip=f"📍 SPC — {rep['location']}, {rep['state']} ({rep['f_scale'] or 'NC'})",
-        ).add_to(m)
-
     return m, count
 
 # ==========================================
@@ -706,9 +637,6 @@ all_features.sort(key=lambda f: SEVERITY_ORDER.get(f["properties"].get("severity
 tornado_positions = extract_tornado_positions(all_features)
 update_trajectories(tornado_positions)
 trajectories = st.session_state.tornado_trajectories
-
-# Rapports SPC du jour
-spc_reports = fetch_spc_tornado_reports()
 
 # ==========================================
 # 📧  DÉTECTION NOUVELLES ALERTES + EMAIL
@@ -875,7 +803,6 @@ with col_map:
         all_features,
         set(selected_events),
         tornado_positions,
-        spc_reports,
         trajectories,
     )
 
@@ -900,25 +827,15 @@ with col_map:
     legend_html = '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">' + "".join(legend_parts) + "</div>"
     st.markdown(legend_html, unsafe_allow_html=True)
 
-    # Légende des nouveaux éléments visuels
+    # Légende des éléments live
     n_live = len(tornado_positions)
-    n_spc  = len(spc_reports)
-    extras = []
     if n_live > 0:
-        extras.append(
+        st.markdown(
+            f'<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">'
             f'<span style="font-size:11px;font-family:monospace;padding:3px 10px;border-radius:4px;'
             f'background:rgba(255,59,48,0.08);border:1px solid rgba(255,59,48,0.3);color:#FF6B6B;">'
-            f'⚡ {n_live} tornade(s) live (centroïde)</span>'
-        )
-    if n_spc > 0:
-        extras.append(
-            f'<span style="font-size:11px;font-family:monospace;padding:3px 10px;border-radius:4px;'
-            f'background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);color:#FBB040;">'
-            f'📍 {n_spc} rapport(s) SPC confirmé(s)</span>'
-        )
-    if extras:
-        st.markdown(
-            '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">' + "".join(extras) + "</div>",
+            f'⚡ {n_live} tornade(s) live · trajectoire active</span>'
+            f'</div>',
             unsafe_allow_html=True
         )
 
