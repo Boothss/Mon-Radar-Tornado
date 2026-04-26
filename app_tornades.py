@@ -8,6 +8,7 @@ import json
 import csv
 import io
 import math
+import html as html_mod
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -1061,17 +1062,17 @@ with col_list:
     else:
         for f in filtered[:20]:
             props       = f["properties"]
-            event       = props.get("event", "Unknown")
-            area        = props.get("areaDesc", "Unknown Zone")
+            event       = html_mod.escape(props.get("event", "Unknown"))
+            area        = html_mod.escape(props.get("areaDesc", "Unknown Zone"))
             sev         = props.get("severity", "Unknown")
-            certainty   = props.get("certainty", "—")
+            certainty   = html_mod.escape(props.get("certainty", "—"))
             onset_raw   = props.get("onset")
             expires_raw = props.get("expires")
             onset_dt    = parse_time(onset_raw)
             expires_dt  = parse_time(expires_raw)
             time_ago    = format_time_ago(onset_dt)
-            instruction = props.get("instruction", "") or "Take shelter immediately."
-            color       = EVENT_COLORS.get(event, "#6B7280")
+            instruction = html_mod.escape(props.get("instruction", "") or "Take shelter immediately.")
+            color       = EVENT_COLORS.get(props.get("event", ""), "#6B7280")
 
             # Couleur et classe selon sévérité
             if sev == "Extreme":
