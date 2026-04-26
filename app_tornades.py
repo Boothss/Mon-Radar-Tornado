@@ -131,6 +131,13 @@ html, body, [data-testid="stAppViewContainer"],
     font-family: 'Space Grotesk', sans-serif !important;
 }
 
+    header[data-testid="stHeader"]  { display: none !important; }
+[data-testid="stToolbar"]       { display: none !important; }
+[data-testid="stDecoration"]    { display: none !important; }
+[data-testid="stStatusWidget"]  { display: none !important; }
+#MainMenu                        { display: none !important; }
+footer                           { display: none !important; }
+
 .block-container { padding: 0 !important; max-width: 100% !important; }
 [data-testid="stSidebar"] { background: #080D1A !important; border-right: 1px solid #1A2540; }
 
@@ -1060,132 +1067,113 @@ with col_list:
         """, unsafe_allow_html=True)
 
     else:
+        # On construit TOUTES les cartes en un seul bloc HTML
+        # et on utilise components.html() pour éviter le sanitiseur Streamlit
+        import streamlit.components.v1 as components
+
+        cards_html = """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@600;700&display=swap');
+        @keyframes glow-red {
+            0%,100% { box-shadow:0 0 6px rgba(255,59,48,0.3); }
+            50%      { box-shadow:0 0 18px rgba(255,59,48,0.7); }
+        }
+        @keyframes glow-orange {
+            0%,100% { box-shadow:0 0 4px rgba(245,158,11,0.2); }
+            50%      { box-shadow:0 0 12px rgba(245,158,11,0.5); }
+        }
+        body { margin:0; padding:0; background:transparent; }
+        .ac { border-radius:12px; padding:14px 16px; margin-bottom:10px; font-family:'Space Grotesk',sans-serif; }
+        .ac.extreme { animation:glow-red 2s infinite; }
+        .ac.severe  { animation:glow-orange 3s infinite; }
+        .ac-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+        .ac-badge { font-size:10px; font-family:'JetBrains Mono',monospace; font-weight:600;
+                    letter-spacing:.1em; text-transform:uppercase; padding:3px 8px; border-radius:5px; }
+        .ac-ago { font-size:10px; font-family:'JetBrains Mono',monospace; color:#4A6FA5; }
+        .ac-area { font-size:14px; font-weight:700; color:#F1F5F9; line-height:1.4; margin-bottom:10px; }
+        .ac-tags { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+        .ac-tag { font-size:10px; font-family:'JetBrains Mono',monospace; padding:3px 9px;
+                  border-radius:5px; border:1px solid; }
+        .ac-time { font-size:10px; font-family:'JetBrains Mono',monospace; color:#4A6FA5; margin-bottom:8px; }
+        .ac-instr { font-size:11px; color:#94A3B8; line-height:1.6;
+                    padding:8px 10px 8px 12px; border-radius:0 6px 6px 0;
+                    background:rgba(0,0,0,0.25); }
+        </style>
+        """
+
         for f in filtered[:20]:
             props       = f["properties"]
-            event       = html_mod.escape(props.get("event", "Unknown"))
-            area        = html_mod.escape(props.get("areaDesc", "Unknown Zone"))
+            event_raw   = props.get("event", "Unknown")
+            area_raw    = props.get("areaDesc", "Unknown Zone")
             sev         = props.get("severity", "Unknown")
-            certainty   = html_mod.escape(props.get("certainty", "—"))
+            certainty_r = props.get("certainty", "—")
             onset_raw   = props.get("onset")
             expires_raw = props.get("expires")
             onset_dt    = parse_time(onset_raw)
             expires_dt  = parse_time(expires_raw)
             time_ago    = format_time_ago(onset_dt)
-            instruction = html_mod.escape(props.get("instruction", "") or "Take shelter immediately.")
-            color       = EVENT_COLORS.get(props.get("event", ""), "#6B7280")
+            instr_raw   = props.get("instruction", "") or "Take shelter immediately."
 
-            # Couleur et classe selon sévérité
+            # Échapper tous les champs texte
+            event       = html_mod.escape(event_raw)
+            area        = html_mod.escape(area_raw)
+            certainty   = html_mod.escape(certainty_r)
+            instruction = html_mod.escape(instr_raw)
+            color       = EVENT_COLORS.get(event_raw, "#6B7280")
+
+            # Couleurs selon sévérité
             if sev == "Extreme":
-                border_color = "#FF3B30"
-                bg_color     = "rgba(255,59,48,0.06)"
-                anim_class   = "alert-card-extreme"
-                sev_dot      = "#FF3B30"
-                badge_bg     = "rgba(255,59,48,0.15)"
-                badge_color  = "#FF6B6B"
+                border_color = "#FF3B30"; bg_color = "rgba(255,59,48,0.06)"
+                anim_class = "extreme"; badge_bg = "rgba(255,59,48,0.15)"; badge_color = "#FF6B6B"
             elif sev == "Severe":
-                border_color = "#F59E0B"
-                bg_color     = "rgba(245,158,11,0.05)"
-                anim_class   = "alert-card-severe"
-                sev_dot      = "#F59E0B"
-                badge_bg     = "rgba(245,158,11,0.15)"
-                badge_color  = "#FBB040"
+                border_color = "#F59E0B"; bg_color = "rgba(245,158,11,0.05)"
+                anim_class = "severe"; badge_bg = "rgba(245,158,11,0.15)"; badge_color = "#FBB040"
             elif sev == "Moderate":
-                border_color = "#3B82F6"
-                bg_color     = "rgba(59,130,246,0.04)"
-                anim_class   = ""
-                sev_dot      = "#3B82F6"
-                badge_bg     = "rgba(59,130,246,0.15)"
-                badge_color  = "#60A5FA"
+                border_color = "#3B82F6"; bg_color = "rgba(59,130,246,0.04)"
+                anim_class = ""; badge_bg = "rgba(59,130,246,0.15)"; badge_color = "#60A5FA"
             else:
-                border_color = "#374151"
-                bg_color     = "rgba(55,65,81,0.04)"
-                anim_class   = ""
-                sev_dot      = "#374151"
-                badge_bg     = "rgba(55,65,81,0.15)"
-                badge_color  = "#94A3B8"
+                border_color = "#374151"; bg_color = "rgba(55,65,81,0.04)"
+                anim_class = ""; badge_bg = "rgba(55,65,81,0.15)"; badge_color = "#94A3B8"
 
             # Expiration
             if expires_dt:
-                now = datetime.now(timezone.utc)
-                mins_left = int((expires_dt - now).total_seconds() / 60)
+                now_t     = datetime.now(timezone.utc)
+                mins_left = int((expires_dt - now_t).total_seconds() / 60)
                 if mins_left <= 0:
-                    expires_str = "⚠ Expiré"
-                    exp_color   = "#374151"
+                    expires_str = "Expire"; exp_color = "#374151"
                 elif mins_left < 30:
-                    expires_str = f"⏱ Expire dans {mins_left}min"
-                    exp_color   = "#F59E0B"
+                    expires_str = f"Expire {mins_left}min"; exp_color = "#F59E0B"
                 else:
-                    hrs = mins_left // 60
+                    hrs  = mins_left // 60
                     mins = mins_left % 60
-                    expires_str = f"Expire dans {f'{hrs}h ' if hrs else ''}{mins}min"
-                    exp_color   = "#4A6FA5"
+                    expires_str = f"Expire {f'{hrs}h ' if hrs else ''}{mins}min"
+                    exp_color = "#4A6FA5"
             else:
-                expires_str = "—"
-                exp_color   = "#374151"
+                expires_str = "—"; exp_color = "#374151"
 
-            st.markdown(f"""
-            <div class="{anim_class}" style="
-                background:{bg_color};
-                border:1px solid {border_color}40;
-                border-left:4px solid {border_color};
-                border-radius:12px;
-                padding:14px 16px;
-                margin-bottom:10px;
-            ">
-              <!-- TOP ROW : event type + time ago -->
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                <span style="font-size:10px;font-family:monospace;font-weight:600;
-                             color:{color};letter-spacing:.1em;text-transform:uppercase;
-                             background:{badge_bg};padding:3px 8px;border-radius:5px;">
-                  {event}
-                </span>
-                <span style="font-size:10px;font-family:monospace;color:#4A6FA5;">
-                  {time_ago}
-                </span>
+            onset_str = onset_dt.strftime('%Y-%m-%d %H:%M UTC') if onset_dt else "—"
+            instr_short = instruction[:200] + ("…" if len(instruction) > 200 else "")
+
+            cards_html += f"""
+            <div class="ac {anim_class}" style="background:{bg_color};border:1px solid {border_color}40;border-left:4px solid {border_color};">
+              <div class="ac-top">
+                <span class="ac-badge" style="color:{color};background:{badge_bg};">{event}</span>
+                <span class="ac-ago">{time_ago}</span>
               </div>
-
-              <!-- ZONE -->
-              <div style="font-size:14px;font-weight:700;color:#F1F5F9;
-                          line-height:1.4;margin-bottom:10px;">
-                {area}
+              <div class="ac-area">{area}</div>
+              <div class="ac-tags">
+                <span class="ac-tag" style="background:{badge_bg};color:{badge_color};border-color:{border_color}50;">&#9679; {sev}</span>
+                <span class="ac-tag" style="background:rgba(255,255,255,0.04);color:#94A3B8;border-color:#1A2540;">{certainty}</span>
+                <span class="ac-tag" style="background:rgba(255,255,255,0.04);color:{exp_color};border-color:#1A2540;">{expires_str}</span>
               </div>
-
-              <!-- BADGES : sévérité + certitude + expiration -->
-              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
-                <span style="font-size:10px;font-family:monospace;padding:3px 9px;
-                             border-radius:5px;background:{badge_bg};
-                             color:{badge_color};border:1px solid {border_color}50;">
-                  ● {sev}
-                </span>
-                <span style="font-size:10px;font-family:monospace;padding:3px 9px;
-                             border-radius:5px;background:rgba(255,255,255,0.04);
-                             color:#94A3B8;border:1px solid #1A2540;">
-                  {certainty}
-                </span>
-                <span style="font-size:10px;font-family:monospace;padding:3px 9px;
-                             border-radius:5px;background:rgba(255,255,255,0.04);
-                             color:{exp_color};border:1px solid #1A2540;">
-                  {expires_str}
-                </span>
-              </div>
-
-              <!-- HEURE EMISSION -->
-              <div style="font-size:10px;font-family:monospace;color:#374151;margin-bottom:8px;">
-                🕐 Émis : {onset_dt.strftime('%Y-%m-%d %H:%M UTC') if onset_dt else '—'}
-              </div>
-
-              <!-- INSTRUCTION -->
-              <div style="font-size:11px;color:#94A3B8;line-height:1.6;
-                          border-left:2px solid {border_color}60;
-                          padding-left:10px;
-                          background:rgba(0,0,0,0.2);
-                          border-radius:0 6px 6px 0;
-                          padding:8px 10px 8px 12px;">
-                {instruction[:200]}{'…' if len(instruction) > 200 else ''}
-              </div>
-
+              <div class="ac-time">&#128336; Emis : {onset_str}</div>
+              <div class="ac-instr" style="border-left:2px solid {border_color}60;">{instr_short}</div>
             </div>
-            """, unsafe_allow_html=True)
+            """
+
+        # Hauteur dynamique selon nombre d'alertes
+        card_height = min(len(filtered[:20]) * 220, 900)
+        components.html(cards_html, height=card_height, scrolling=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
 
