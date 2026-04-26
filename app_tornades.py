@@ -130,12 +130,6 @@ html, body, [data-testid="stAppViewContainer"],
     color: #E2E8F0 !important;
     font-family: 'Space Grotesk', sans-serif !important;
 }
-    header[data-testid="stHeader"]  { display: none !important; }
-[data-testid="stToolbar"]       { display: none !important; }
-[data-testid="stDecoration"]    { display: none !important; }
-[data-testid="stStatusWidget"]  { display: none !important; }
-#MainMenu                        { display: none !important; }
-footer                           { display: none !important; }
 
 .block-container { padding: 0 !important; max-width: 100% !important; }
 [data-testid="stSidebar"] { background: #080D1A !important; border-right: 1px solid #1A2540; }
@@ -623,10 +617,30 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         instruction = props.get("instruction", "") or ""
         color       = EVENT_COLORS.get(event, "#6B7280")
 
-        # Récupère toutes les géométries (polygone direct OU comtés)
+        # Vérifie si polygone direct disponible
+        has_direct_polygon = (
+            f.get("geometry") and
+            f["geometry"].get("type") == "Polygon"
+        )
+
+        # Récupère toutes les géométries
         geometries = get_alert_geometries(f)
         if not geometries:
             continue
+
+        # Style selon type de géométrie
+        if has_direct_polygon:
+            # Polygone précis NWS → rempli, bien visible
+            fill_opacity = 0.22
+            weight       = 2
+            dash         = None
+            label_suffix = ""
+        else:
+            # Contour de comté → bordure uniquement, très transparent
+            fill_opacity = 0.06
+            weight       = 1.5
+            dash         = "6 4"
+            label_suffix = " (zone comté)"
 
         popup_html = f"""
         <div style="font-family:'Space Grotesk',sans-serif;background:#080D1A;color:#E2E8F0;
@@ -639,13 +653,14 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                       color:#CBD5E1;line-height:1.5;">
             {(instruction[:200]+'…') if len(instruction) > 200 else instruction or 'No specific instructions.'}
           </div>
-          <div style="margin-top:10px;font-size:10px;font-family:monospace;color:#374151;">
-            Severity: {sev}
+          <div style="margin-top:10px;font-size:10px;font-family:monospace;color:#374151;
+                      display:flex;align-items:center;gap:6px;">
+            {'<span style="color:#22C55E;">◉ Polygone précis</span>' if has_direct_polygon else '<span style="color:#F59E0B;">◎ Zone comté approximative</span>'}
+            &nbsp;·&nbsp; {sev}
           </div>
         </div>"""
 
         for geom in geometries:
-            # Gère Polygon et MultiPolygon
             if geom.get("type") == "Polygon":
                 poly_list = [geom["coordinates"]]
             elif geom.get("type") == "MultiPolygon":
@@ -658,12 +673,13 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 folium.Polygon(
                     locations=coords,
                     color=color,
-                    weight=2,
+                    weight=weight,
                     fill=True,
                     fill_color=color,
-                    fill_opacity=0.18,
+                    fill_opacity=fill_opacity,
+                    dash_array=dash,
                     popup=folium.Popup(popup_html, max_width=320),
-                    tooltip=f"⚠ {event} — {area[:50]}",
+                    tooltip=f"⚠ {event}{label_suffix} — {area[:45]}",
                 ).add_to(m)
                 count += 1
 
@@ -1077,6 +1093,20 @@ with col_map:
         )
     legend_html = '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">' + "".join(legend_parts) + "</div>"
     st.markdown(legend_html, unsafe_allow_html=True)
+
+    # Légende précision polygones
+    st.markdown("""
+    <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+      <span style="font-size:10px;font-family:monospace;padding:2px 8px;border-radius:4px;
+                   background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);color:#22C55E;">
+        ◉ Zone remplie = polygone précis NWS
+      </span>
+      <span style="font-size:10px;font-family:monospace;padding:2px 8px;border-radius:4px;
+                   background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);color:#F59E0B;">
+        ◎ Contour pointillé = zone comté approximative
+      </span>
+    </div>
+    """, unsafe_allow_html=True)
 
     # Légende des éléments live
     n_live = len(tornado_positions)
