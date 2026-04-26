@@ -130,13 +130,6 @@ html, body, [data-testid="stAppViewContainer"],
     font-family: 'Space Grotesk', sans-serif !important;
 }
 
-            header[data-testid="stHeader"]  { display: none !important; }
-[data-testid="stToolbar"]       { display: none !important; }
-[data-testid="stDecoration"]    { display: none !important; }
-[data-testid="stStatusWidget"]  { display: none !important; }
-#MainMenu                        { display: none !important; }
-footer                           { display: none !important; }
-
 .block-container { padding: 0 !important; max-width: 100% !important; }
 [data-testid="stSidebar"] { background: #080D1A !important; border-right: 1px solid #1A2540; }
 
@@ -372,6 +365,102 @@ def format_time_ago(dt):
     return f"{hrs//24}d ago"
 
 # ==========================================
+# 📍  SPC TORNADO REPORTS (trajectoires confirmées)
+# ==========================================
+SPC_REPORTS_URL = "https://www.spc.noaa.gov/climo/reports/today_filtered.csv"
+
+@st.cache_data(ttl=300)  # refresh toutes les 5 min
+def fetch_spc_tornado_reports():
+    """Récupère uniquement les tornades confirmées SPC du jour."""
+    try:
+        r = requests.get(SPC_REPORTS_URL, timeout=10,
+                         headers={"User-Agent": "VORTEX-SWI/2.0"})
+        r.raise_for_status()
+        reports = []
+        lines = r.text.strip().split('\n')
+        in_tornado_section = False
+        for line in lines:
+            line = line.strip()
+            if line.upper() == "TORNADO":
+                in_tornado_section = True
+                continue
+            if line.upper() in ("HAIL", "WIND"):
+                in_tornado_section = False
+                continue
+            if in_tornado_section and line.lower().startswith("time"):
+                continue
+            if in_tornado_section and line:
+                parts = line.split(',')
+                if len(parts) >= 7:
+                    try:
+                        lat = float(parts[5].strip())
+                        lon = float(parts[6].strip())
+                        if lat == 0 and lon == 0:
+                            continue
+                        # Parse heure pour tri chronologique
+                        t_str = parts[0].strip()
+                        reports.append({
+                            'time':     t_str,
+                            'f_scale':  parts[1].strip(),
+                            'location': parts[2].strip(),
+                            'county':   parts[3].strip(),
+                            'state':    parts[4].strip(),
+                            'lat':      lat,
+                            'lon':      lon,
+                            'comments': parts[7].strip() if len(parts) > 7 else '',
+                        })
+                    except (ValueError, IndexError):
+                        pass
+        # Trie par heure pour avoir les trajectoires dans l'ordre
+        reports.sort(key=lambda x: x['time'])
+        return reports
+    except Exception:
+        return []
+
+def group_spc_trajectories(reports, max_dist_km=150, max_time_min=60):
+    """
+    Regroupe les rapports SPC proches dans le temps et l'espace
+    pour reconstruire des trajectoires de tornades distinctes.
+    Retourne une liste de groupes (chaque groupe = une tornade).
+    """
+    if not reports:
+        return []
+
+    def time_to_min(t_str):
+        try:
+            h, m = int(t_str[:2]), int(t_str[2:4])
+            return h * 60 + m
+        except Exception:
+            return 0
+
+    def dist_km(lat1, lon1, lat2, lon2):
+        R = 6371
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+        return R * 2 * math.asin(math.sqrt(a))
+
+    groups = []
+    used = set()
+
+    for i, rep in enumerate(reports):
+        if i in used:
+            continue
+        group = [rep]
+        used.add(i)
+        for j, other in enumerate(reports):
+            if j in used or j == i:
+                continue
+            dt = abs(time_to_min(rep['time']) - time_to_min(other['time']))
+            dd = dist_km(rep['lat'], rep['lon'], other['lat'], other['lon'])
+            if dt <= max_time_min and dd <= max_dist_km:
+                group.append(other)
+                used.add(j)
+        groups.append(sorted(group, key=lambda x: x['time']))
+
+    return groups
+
+# ==========================================
 # 🌪️  TORNADO LIVE POSITION & TRAJECTORY
 # ==========================================
 
@@ -425,7 +514,7 @@ def update_trajectories(current_positions):
 # ==========================================
 # 🗺️  MAP BUILDER  (avec position live + trajectoire + SPC)
 # ==========================================
-def build_map(features, show_events, tornado_positions, trajectories):
+def build_map(features, show_events, tornado_positions, trajectories, spc_groups):
     m = folium.Map(
         location=[38.0, -95.0],
         zoom_start=4,
@@ -553,6 +642,60 @@ def build_map(features, show_events, tornado_positions, trajectories):
             ),
         ).add_to(m)
 
+    # ── TRAJECTOIRES SPC (tornades confirmées du jour) ───────────
+    for group in spc_groups:
+        if not group:
+            continue
+
+        # Ligne pointillée rouge reliant les points dans l'ordre chronologique
+        if len(group) >= 2:
+            path = [(rep['lat'], rep['lon']) for rep in group]
+            folium.PolyLine(
+                locations=path,
+                color="#FF3B30",
+                weight=2.5,
+                opacity=0.8,
+                dash_array="8 5",
+                tooltip="Trajectoire SPC confirmée (~30min délai)",
+            ).add_to(m)
+
+        # Points pour chaque observation
+        for idx, rep in enumerate(group):
+            is_last = (idx == len(group) - 1)
+            # Dernier point = plus grand (observation la plus récente)
+            radius     = 10 if is_last else 7
+            fill_op    = 0.9 if is_last else 0.7
+            f_scale    = rep['f_scale'] or 'NC'
+            popup_html = f"""
+            <div style="font-family:monospace;background:#080D1A;color:#E2E8F0;
+                        padding:12px;border-radius:8px;border:1px solid #FF3B30;min-width:210px;">
+              <div style="color:#FF3B30;font-size:10px;letter-spacing:.1em;margin-bottom:6px;">
+                🌪️ TORNADE CONFIRMÉE — SPC
+              </div>
+              <div style="font-size:13px;font-weight:600;margin-bottom:6px;">
+                {rep['location']}, {rep['state']}
+              </div>
+              <div style="font-size:11px;color:#94A3B8;margin-bottom:4px;">
+                Magnitude : <strong style="color:#FF6B6B;">{f_scale}</strong>
+                &nbsp;·&nbsp; {rep['time'][:2]}:{rep['time'][2:4]} UTC
+              </div>
+              {'<div style="font-size:11px;color:#CBD5E1;margin-top:6px;border-top:1px solid #1A2540;padding-top:6px;">'+rep["comments"][:120]+'</div>' if rep['comments'] else ''}
+              <div style="font-size:10px;color:#374151;margin-top:8px;">
+                ⚠ Données SPC · délai ~10–30 min
+              </div>
+            </div>"""
+            folium.CircleMarker(
+                location=[rep['lat'], rep['lon']],
+                radius=radius,
+                color="#FF3B30",
+                weight=2,
+                fill=True,
+                fill_color="#FF3B30",
+                fill_opacity=fill_op,
+                popup=folium.Popup(popup_html, max_width=260),
+                tooltip=f"🌪️ {rep['location']}, {rep['state']} · {f_scale} · {rep['time'][:2]}:{rep['time'][2:4]} UTC",
+            ).add_to(m)
+
     return m, count
 
 # ==========================================
@@ -644,6 +787,10 @@ all_features.sort(key=lambda f: SEVERITY_ORDER.get(f["properties"].get("severity
 tornado_positions = extract_tornado_positions(all_features)
 update_trajectories(tornado_positions)
 trajectories = st.session_state.tornado_trajectories
+
+# Rapports SPC tornades du jour + regroupement en trajectoires
+spc_reports  = fetch_spc_tornado_reports()
+spc_groups   = group_spc_trajectories(spc_reports)
 
 # ==========================================
 # 📧  DÉTECTION NOUVELLES ALERTES + EMAIL
@@ -811,6 +958,7 @@ with col_map:
         set(selected_events),
         tornado_positions,
         trajectories,
+        spc_groups,
     )
 
     map_result = st_folium(
@@ -836,19 +984,46 @@ with col_map:
 
     # Légende des éléments live
     n_live = len(tornado_positions)
+    n_spc  = sum(len(g) for g in spc_groups)
+    extras = []
     if n_live > 0:
-        st.markdown(
-            f'<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">'
+        extras.append(
             f'<span style="font-size:11px;font-family:monospace;padding:3px 10px;border-radius:4px;'
             f'background:rgba(255,59,48,0.08);border:1px solid rgba(255,59,48,0.3);color:#FF6B6B;">'
-            f'⚡ {n_live} tornade(s) live · trajectoire active</span>'
-            f'</div>',
+            f'⚡ {n_live} alerte(s) live — zone NWS</span>'
+        )
+    if n_spc > 0:
+        extras.append(
+            f'<span style="font-size:11px;font-family:monospace;padding:3px 10px;border-radius:4px;'
+            f'background:rgba(255,59,48,0.06);border:1px solid rgba(255,59,48,0.2);color:#94A3B8;">'
+            f'🌪️ {n_spc} position(s) SPC confirmée(s) · ~30min délai</span>'
+        )
+    if extras:
+        st.markdown(
+            '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">' + "".join(extras) + "</div>",
             unsafe_allow_html=True
         )
 
 # ---- RIGHT: ALERT LOG ----
 with col_list:
-    # Severity filter
+
+    # CSS animations pour les cartes
+    st.markdown("""
+    <style>
+    @keyframes glow-red {
+        0%, 100% { box-shadow: 0 0 6px rgba(255,59,48,0.3); }
+        50%       { box-shadow: 0 0 18px rgba(255,59,48,0.7); }
+    }
+    @keyframes glow-orange {
+        0%, 100% { box-shadow: 0 0 4px rgba(245,158,11,0.2); }
+        50%       { box-shadow: 0 0 12px rgba(245,158,11,0.5); }
+    }
+    .alert-card-extreme { animation: glow-red 2s infinite; }
+    .alert-card-severe  { animation: glow-orange 3s infinite; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── Filtres sévérité ──────────────────────────────────────────
     sev_filter = st.radio(
         "Filter",
         ["All", "Extreme", "Severe", "Moderate"],
@@ -861,70 +1036,155 @@ with col_list:
         filtered = [f for f in all_features if f["properties"].get("severity") == sev_filter]
 
     n_filtered = len(filtered)
-    hdr = (
-        f'<div class="panel" style="min-height:540px;">'
-        f'<div class="section-header">'
-        f'<span class="section-title">ALERT LOG</span>'
-        f'<span class="section-badge">{n_filtered} EVENTS</span>'
-        f'</div>'
-    )
-    st.markdown(hdr, unsafe_allow_html=True)
 
+    # ── Header ───────────────────────────────────────────────────
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                margin-bottom:10px;padding:0 2px;">
+      <span style="font-size:11px;font-family:monospace;letter-spacing:.15em;
+                   color:#4A6FA5;text-transform:uppercase;">ALERT LOG</span>
+      <span style="font-size:10px;font-family:monospace;padding:3px 10px;
+                   border-radius:20px;background:#0F1E38;color:#4A6FA5;
+                   border:1px solid #1A2540;">{n_filtered} EVENTS</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Vide ─────────────────────────────────────────────────────
     if not filtered:
         st.markdown("""
-        <div class="empty-state">
-          <div class="empty-icon">✓</div>
-          <div class="empty-text">No active alerts match current filters</div>
+        <div style="text-align:center;padding:3rem 1rem;color:#4A6FA5;font-family:monospace;">
+          <div style="font-size:32px;margin-bottom:12px;opacity:0.4;">✓</div>
+          <div style="font-size:13px;">Aucune alerte active</div>
         </div>
         """, unsafe_allow_html=True)
+
     else:
-        for i, f in enumerate(filtered[:20]):
-            props = f["properties"]
-            event     = props.get("event", "Unknown")
-            area      = props.get("areaDesc", "Unknown Zone")
-            sev       = props.get("severity", "Unknown")
-            certainty = props.get("certainty", "—")
-            onset_raw = props.get("onset")
-            onset_dt  = parse_time(onset_raw)
-            time_ago  = format_time_ago(onset_dt)
-            instruction = props.get("instruction","") or "Take shelter immediately."
+        for f in filtered[:20]:
+            props       = f["properties"]
+            event       = props.get("event", "Unknown")
+            area        = props.get("areaDesc", "Unknown Zone")
+            sev         = props.get("severity", "Unknown")
+            certainty   = props.get("certainty", "—")
+            onset_raw   = props.get("onset")
+            expires_raw = props.get("expires")
+            onset_dt    = parse_time(onset_raw)
+            expires_dt  = parse_time(expires_raw)
+            time_ago    = format_time_ago(onset_dt)
+            instruction = props.get("instruction", "") or "Take shelter immediately."
+            color       = EVENT_COLORS.get(event, "#6B7280")
 
-            _, sev_bar_cls, tag_cls = SEV_COLORS.get(sev, SEV_COLORS["Unknown"])
+            # Couleur et classe selon sévérité
+            if sev == "Extreme":
+                border_color = "#FF3B30"
+                bg_color     = "rgba(255,59,48,0.06)"
+                anim_class   = "alert-card-extreme"
+                sev_dot      = "#FF3B30"
+                badge_bg     = "rgba(255,59,48,0.15)"
+                badge_color  = "#FF6B6B"
+            elif sev == "Severe":
+                border_color = "#F59E0B"
+                bg_color     = "rgba(245,158,11,0.05)"
+                anim_class   = "alert-card-severe"
+                sev_dot      = "#F59E0B"
+                badge_bg     = "rgba(245,158,11,0.15)"
+                badge_color  = "#FBB040"
+            elif sev == "Moderate":
+                border_color = "#3B82F6"
+                bg_color     = "rgba(59,130,246,0.04)"
+                anim_class   = ""
+                sev_dot      = "#3B82F6"
+                badge_bg     = "rgba(59,130,246,0.15)"
+                badge_color  = "#60A5FA"
+            else:
+                border_color = "#374151"
+                bg_color     = "rgba(55,65,81,0.04)"
+                anim_class   = ""
+                sev_dot      = "#374151"
+                badge_bg     = "rgba(55,65,81,0.15)"
+                badge_color  = "#94A3B8"
 
-            # Truncate area
-            area_short = area[:55] + "…" if len(area) > 55 else area
+            # Expiration
+            if expires_dt:
+                now = datetime.now(timezone.utc)
+                mins_left = int((expires_dt - now).total_seconds() / 60)
+                if mins_left <= 0:
+                    expires_str = "⚠ Expiré"
+                    exp_color   = "#374151"
+                elif mins_left < 30:
+                    expires_str = f"⏱ Expire dans {mins_left}min"
+                    exp_color   = "#F59E0B"
+                else:
+                    hrs = mins_left // 60
+                    mins = mins_left % 60
+                    expires_str = f"Expire dans {f'{hrs}h ' if hrs else ''}{mins}min"
+                    exp_color   = "#4A6FA5"
+            else:
+                expires_str = "—"
+                exp_color   = "#374151"
 
-            with st.expander(f"{'🔴' if sev=='Extreme' else '🟡' if sev=='Severe' else '🔵'} {area_short}"):
-                st.markdown(f"""
-                <div class="detail-section">
-                  <div class="detail-label">Event type</div>
-                  <div class="detail-value" style="color:{EVENT_COLORS.get(event,'#94A3B8')}; font-weight:600;">{event}</div>
-                </div>
-                <div class="detail-section">
-                  <div class="detail-label">Affected area</div>
-                  <div class="detail-value">{area}</div>
-                </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
-                  <div class="detail-section" style="margin:0;">
-                    <div class="detail-label">Severity</div>
-                    <div class="detail-value"><span class="alert-tag {tag_cls}">{sev}</span></div>
-                  </div>
-                  <div class="detail-section" style="margin:0;">
-                    <div class="detail-label">Certainty</div>
-                    <div class="detail-value"><span class="alert-tag tag-info">{certainty}</span></div>
-                  </div>
-                </div>
-                <div class="detail-section">
-                  <div class="detail-label">Issued</div>
-                  <div class="detail-value" style="font-family:monospace;font-size:12px;">{onset_dt.strftime('%Y-%m-%d %H:%M UTC') if onset_dt else '—'} &nbsp;·&nbsp; {time_ago}</div>
-                </div>
-                <div class="detail-section">
-                  <div class="detail-label">Instructions</div>
-                  <div class="detail-instruction">{(instruction[:300]+'…') if len(instruction)>300 else instruction}</div>
-                </div>
-                """, unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="{anim_class}" style="
+                background:{bg_color};
+                border:1px solid {border_color}40;
+                border-left:4px solid {border_color};
+                border-radius:12px;
+                padding:14px 16px;
+                margin-bottom:10px;
+            ">
+              <!-- TOP ROW : event type + time ago -->
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <span style="font-size:10px;font-family:monospace;font-weight:600;
+                             color:{color};letter-spacing:.1em;text-transform:uppercase;
+                             background:{badge_bg};padding:3px 8px;border-radius:5px;">
+                  {event}
+                </span>
+                <span style="font-size:10px;font-family:monospace;color:#4A6FA5;">
+                  {time_ago}
+                </span>
+              </div>
 
-    st.markdown("</div>", unsafe_allow_html=True)
+              <!-- ZONE -->
+              <div style="font-size:14px;font-weight:700;color:#F1F5F9;
+                          line-height:1.4;margin-bottom:10px;">
+                {area}
+              </div>
+
+              <!-- BADGES : sévérité + certitude + expiration -->
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+                <span style="font-size:10px;font-family:monospace;padding:3px 9px;
+                             border-radius:5px;background:{badge_bg};
+                             color:{badge_color};border:1px solid {border_color}50;">
+                  ● {sev}
+                </span>
+                <span style="font-size:10px;font-family:monospace;padding:3px 9px;
+                             border-radius:5px;background:rgba(255,255,255,0.04);
+                             color:#94A3B8;border:1px solid #1A2540;">
+                  {certainty}
+                </span>
+                <span style="font-size:10px;font-family:monospace;padding:3px 9px;
+                             border-radius:5px;background:rgba(255,255,255,0.04);
+                             color:{exp_color};border:1px solid #1A2540;">
+                  {expires_str}
+                </span>
+              </div>
+
+              <!-- HEURE EMISSION -->
+              <div style="font-size:10px;font-family:monospace;color:#374151;margin-bottom:8px;">
+                🕐 Émis : {onset_dt.strftime('%Y-%m-%d %H:%M UTC') if onset_dt else '—'}
+              </div>
+
+              <!-- INSTRUCTION -->
+              <div style="font-size:11px;color:#94A3B8;line-height:1.6;
+                          border-left:2px solid {border_color}60;
+                          padding-left:10px;
+                          background:rgba(0,0,0,0.2);
+                          border-radius:0 6px 6px 0;
+                          padding:8px 10px 8px 12px;">
+                {instruction[:200]}{'…' if len(instruction) > 200 else ''}
+              </div>
+
+            </div>
+            """, unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
 
