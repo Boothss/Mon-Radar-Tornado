@@ -9,6 +9,7 @@ import csv
 import io
 import math
 import smtplib
+import html as _html
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -121,6 +122,14 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
+/* ── Masquer le header Streamlit (Fork / GitHub / menu) ── */
+header[data-testid="stHeader"]  { display: none !important; }
+[data-testid="stToolbar"]       { display: none !important; }
+[data-testid="stDecoration"]    { display: none !important; }
+[data-testid="stStatusWidget"]  { display: none !important; }
+#MainMenu                        { display: none !important; }
+footer                           { display: none !important; }
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body, [data-testid="stAppViewContainer"],
@@ -174,7 +183,6 @@ html, body, [data-testid="stAppViewContainer"],
 
 .vortex-body { padding: 1.5rem 2rem; display: flex; flex-direction: column; gap: 1.5rem; }
 
-.metric-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
 .metric-card {
     background: #080D1A;
     border: 1px solid #0F1E38;
@@ -184,78 +192,20 @@ html, body, [data-testid="stAppViewContainer"],
     overflow: hidden;
     transition: border-color 0.2s;
 }
-.metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
-.metric-card.danger::before  { background: linear-gradient(90deg, #FF3B30, transparent); }
-.metric-card.warning::before { background: linear-gradient(90deg, #F59E0B, transparent); }
-.metric-card.info::before    { background: linear-gradient(90deg, #3B82F6, transparent); }
-.metric-card.success::before { background: linear-gradient(90deg, #22C55E, transparent); }
-.metric-card.neutral::before { background: linear-gradient(90deg, #6B7280, transparent); }
-
 .metric-label { font-size: 10px; font-family: 'JetBrains Mono', monospace; letter-spacing: 0.12em; color: #4A6FA5; text-transform: uppercase; margin-bottom: 8px; }
 .metric-value { font-size: 28px; font-weight: 700; line-height: 1; color: #FFFFFF; }
-.metric-value.danger  { color: #FF3B30; }
-.metric-value.warning { color: #F59E0B; }
-.metric-value.success { color: #22C55E; }
 .metric-sub { font-size: 11px; color: #4A6FA5; margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
 
-.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.section-title { font-size: 11px; font-family: 'JetBrains Mono', monospace; letter-spacing: 0.15em; color: #4A6FA5; text-transform: uppercase; }
 .section-badge { font-size: 10px; font-family: 'JetBrains Mono', monospace; padding: 3px 10px; border-radius: 20px; background: #0F1E38; color: #4A6FA5; border: 1px solid #1A2540; }
 .section-badge.live { background: rgba(255, 59, 48, 0.1); color: #FF3B30; border-color: rgba(255, 59, 48, 0.3); }
 
 .panel { background: #080D1A; border: 1px solid #0F1E38; border-radius: 16px; padding: 1.25rem; height: 100%; }
-
-.alert-row {
-    display: flex; align-items: flex-start; gap: 12px; padding: 12px 0;
-    border-bottom: 1px solid #0A1628; cursor: pointer; transition: background 0.15s;
-    border-radius: 8px; padding-left: 8px; margin-left: -8px;
-}
-.alert-row:hover { background: rgba(255,255,255,0.02); }
-.alert-row:last-child { border-bottom: none; }
-
-.alert-sev-bar { width: 3px; min-height: 50px; border-radius: 2px; align-self: stretch; flex-shrink: 0; }
-.sev-extreme { background: #FF3B30; box-shadow: 0 0 6px rgba(255,59,48,0.5); }
-.sev-severe  { background: #F59E0B; }
-.sev-moderate{ background: #3B82F6; }
-.sev-minor   { background: #22C55E; }
-.sev-expired { background: #374151; }
-
-.alert-content { flex: 1; min-width: 0; }
-.alert-zone { font-size: 13px; font-weight: 600; color: #E2E8F0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.alert-type { font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #4A6FA5; margin-top: 2px; }
-.alert-meta { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
-.alert-tag { font-size: 10px; padding: 2px 7px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; border: 1px solid; }
-.tag-extreme  { background: rgba(255,59,48,0.1); color: #FF6B6B; border-color: rgba(255,59,48,0.3); }
-.tag-severe   { background: rgba(245,158,11,0.1); color: #FBB040; border-color: rgba(245,158,11,0.3); }
-.tag-moderate { background: rgba(59,130,246,0.1); color: #60A5FA; border-color: rgba(59,130,246,0.3); }
-.tag-info     { background: rgba(100,116,139,0.1); color: #94A3B8; border-color: rgba(100,116,139,0.3); }
-.alert-time { font-size: 10px; font-family: 'JetBrains Mono', monospace; color: #374151; margin-top: 4px; }
-
-.filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-.filter-chip { font-size: 11px; font-family: 'JetBrains Mono', monospace; padding: 5px 12px; border-radius: 6px; border: 1px solid #1A2540; background: #0A1220; color: #4A6FA5; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
-.filter-chip.active { background: #0F1E38; border-color: #3B82F6; color: #60A5FA; }
-.filter-chip.danger.active { border-color: #FF3B30; color: #FF6B6B; background: rgba(255,59,48,0.08); }
 
 .refresh-bar { background: #0A1220; border: 1px solid #0F1E38; border-radius: 10px; padding: 10px 16px; display: flex; align-items: center; gap: 12px; }
 .refresh-label { font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #4A6FA5; flex-shrink: 0; }
 .progress-track { flex: 1; height: 3px; background: #0F1E38; border-radius: 2px; overflow: hidden; }
 .progress-fill-bar { height: 3px; border-radius: 2px; background: linear-gradient(90deg, #3B82F6, #60A5FA); transition: width 1s linear; }
 .refresh-countdown { font-size: 12px; font-family: 'JetBrains Mono', monospace; color: #3B82F6; min-width: 40px; text-align: right; }
-
-.timeline-container { display: flex; align-items: flex-end; gap: 3px; height: 40px; padding: 4px 0; }
-.timeline-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.timeline-bar { width: 100%; border-radius: 2px 2px 0 0; min-height: 2px; transition: opacity 0.2s; }
-.timeline-bar:hover { opacity: 0.7; }
-.timeline-hour { font-size: 9px; font-family: 'JetBrains Mono', monospace; color: #374151; }
-
-.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem 1rem; color: #374151; text-align: center; gap: 12px; }
-.empty-icon { font-size: 40px; opacity: 0.4; }
-.empty-text { font-size: 14px; color: #4A6FA5; }
-
-.detail-section { margin-bottom: 16px; }
-.detail-label { font-size: 10px; font-family: 'JetBrains Mono', monospace; letter-spacing: 0.1em; color: #4A6FA5; text-transform: uppercase; margin-bottom: 4px; }
-.detail-value { font-size: 13px; color: #CBD5E1; line-height: 1.5; }
-.detail-instruction { font-size: 12px; color: #94A3B8; line-height: 1.6; padding: 10px 12px; background: rgba(255,59,48,0.05); border-left: 2px solid rgba(255,59,48,0.4); border-radius: 0 6px 6px 0; }
 
 [data-testid="stMetric"] { display: none !important; }
 div[data-testid="column"] > div { height: 100%; }
@@ -271,14 +221,16 @@ div[data-testid="column"] > div { height: 100%; }
     border-radius: 8px !important; color: #E2E8F0 !important;
     font-family: 'Space Grotesk', sans-serif !important;
 }
-.stSlider > div > div > div { background: #3B82F6 !important; }
-[data-testid="stSlider"] label { color: #4A6FA5 !important; font-size: 11px !important; font-family: 'JetBrains Mono', monospace !important; letter-spacing: 0.1em !important; }
 [data-testid="stExpander"] { background: #0A1220 !important; border: 1px solid #0F1E38 !important; border-radius: 10px !important; }
 [data-testid="stExpander"] summary { color: #94A3B8 !important; font-size: 12px !important; }
-.stAlert { border-radius: 10px !important; border: none !important; }
 [data-testid="stDownloadButton"] > button { background: rgba(34,197,94,0.08) !important; color: #22C55E !important; border: 1px solid rgba(34,197,94,0.3) !important; }
 [data-testid="stDownloadButton"] > button:hover { background: rgba(34,197,94,0.15) !important; }
 div[data-testid="stHorizontalBlock"] { gap: 1rem; }
+
+@keyframes glow-red    { 0%,100%{box-shadow:0 0 6px rgba(255,59,48,0.3)} 50%{box-shadow:0 0 18px rgba(255,59,48,0.7)} }
+@keyframes glow-orange { 0%,100%{box-shadow:0 0 4px rgba(245,158,11,0.2)} 50%{box-shadow:0 0 12px rgba(245,158,11,0.5)} }
+.alert-card-extreme { animation: glow-red 2s infinite; }
+.alert-card-severe  { animation: glow-orange 3s infinite; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -367,18 +319,12 @@ def format_time_ago(dt):
 # ==========================================
 # 🌪️  TORNADO LIVE POSITION & TRAJECTORY
 # ==========================================
-
 def compute_centroid(coords):
-    """Calcule le centroïde d'un polygone GeoJSON → (lat, lon)."""
     lats = [p[1] for p in coords]
     lons = [p[0] for p in coords]
     return sum(lats) / len(lats), sum(lons) / len(lons)
 
 def extract_tornado_positions(features):
-    """
-    Extrait la position approximative (centroïde du polygone)
-    de chaque Tornado Warning / Emergency actif.
-    """
     positions = {}
     for f in features:
         props = f["properties"]
@@ -400,34 +346,20 @@ def extract_tornado_positions(features):
     return positions
 
 def update_trajectories(current_positions):
-    """
-    Ajoute le point courant dans l'historique de chaque tornade.
-    Conserve les 20 dernières positions par alerte.
-    """
     if "tornado_trajectories" not in st.session_state:
         st.session_state.tornado_trajectories = {}
-
     for alert_id, pos in current_positions.items():
         hist = st.session_state.tornado_trajectories.get(alert_id, [])
-        # N'ajoute que si la position a changé (ou premier point)
         if not hist or (hist[-1][0] != pos['lat'] or hist[-1][1] != pos['lon']):
             ts = datetime.now(timezone.utc).strftime("%H:%M")
             hist.append((pos['lat'], pos['lon'], ts))
         st.session_state.tornado_trajectories[alert_id] = hist[-20:]
 
 # ==========================================
-# 🗺️  MAP BUILDER  (avec position live + trajectoire + SPC)
+# 🗺️  MAP BUILDER
 # ==========================================
 def build_map(features, show_events, tornado_positions, trajectories):
-    m = folium.Map(
-        location=[38.0, -95.0],
-        zoom_start=4,
-        tiles=None,
-    )
-    # Masque l'attribution Leaflet/OSM/Carto en bas de carte
-    m.get_root().html.add_child(folium.Element(
-        "<style>.leaflet-control-attribution { display: none !important; }</style>"
-    ))
+    m = folium.Map(location=[38.0, -95.0], zoom_start=4, tiles=None)
     folium.TileLayer(
         tiles="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
         attr='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -435,7 +367,6 @@ def build_map(features, show_events, tornado_positions, trajectories):
         max_zoom=19,
     ).add_to(m)
 
-    # ── POLYGONES D'ALERTE (zones rouges) ────────────────────────
     count = 0
     for f in features:
         props = f["properties"]
@@ -444,27 +375,26 @@ def build_map(features, show_events, tornado_positions, trajectories):
             continue
         geom        = f.get("geometry")
         sev         = props.get("severity", "Unknown")
-        area        = props.get("areaDesc", "Unknown zone")
-        headline    = props.get("headline", event)
-        instruction = props.get("instruction", "") or ""
+        area        = _html.escape(props.get("areaDesc", "Unknown zone"))
+        headline    = _html.escape(props.get("headline", event))
+        instruction = _html.escape(props.get("instruction", "") or "")
         color       = EVENT_COLORS.get(event, "#6B7280")
 
         if geom and geom.get("type") == "Polygon":
             coords = [[p[1], p[0]] for p in geom["coordinates"][0]]
+            instr_preview = (instruction[:200] + "…") if len(instruction) > 200 else instruction or "No specific instructions."
             popup_html = f"""
             <div style="font-family:'Space Grotesk',sans-serif;background:#080D1A;color:#E2E8F0;
                         border-radius:10px;padding:14px;min-width:240px;max-width:300px;
                         border:1px solid {color}40;">
               <div style="font-size:10px;font-family:monospace;color:{color};letter-spacing:.1em;
-                          text-transform:uppercase;margin-bottom:6px;">{event}</div>
+                          text-transform:uppercase;margin-bottom:6px;">{_html.escape(event)}</div>
               <div style="font-size:14px;font-weight:600;margin-bottom:8px;">{area[:60]}</div>
               <div style="font-size:11px;color:#94A3B8;margin-bottom:8px;">{headline[:120]}</div>
               <div style="font-size:11px;border-left:2px solid {color};padding-left:8px;
-                          color:#CBD5E1;line-height:1.5;">
-                {(instruction[:200]+'…') if len(instruction) > 200 else instruction or 'No specific instructions.'}
-              </div>
+                          color:#CBD5E1;line-height:1.5;">{instr_preview}</div>
               <div style="margin-top:10px;font-size:10px;font-family:monospace;color:#374151;">
-                Severity: {sev}
+                Severity: {_html.escape(sev)}
               </div>
             </div>"""
             folium.Polygon(
@@ -475,79 +405,51 @@ def build_map(features, show_events, tornado_positions, trajectories):
                 fill_color=color,
                 fill_opacity=0.18,
                 popup=folium.Popup(popup_html, max_width=320),
-                tooltip=f"⚠ {event} — {area[:50]}",
+                tooltip=f"⚠ {event} — {props.get('areaDesc','')[:50]}",
             ).add_to(m)
             count += 1
 
-    # ── TRAJECTOIRES (historique des positions) ───────────────────
     for alert_id, history in trajectories.items():
         if len(history) < 2:
             continue
         path = [(lat, lon) for lat, lon, _ in history]
-        # Ligne pointillée blanche
-        folium.PolyLine(
-            locations=path,
-            color="#FFFFFF",
-            weight=2,
-            opacity=0.5,
-            dash_array="6 4",
-            tooltip="Trajectoire de la tornade",
-        ).add_to(m)
-        # Points intermédiaires (positions passées)
+        folium.PolyLine(locations=path, color="#FFFFFF", weight=2, opacity=0.5, dash_array="6 4",
+                        tooltip="Trajectoire de la tornade").add_to(m)
         for lat, lon, ts in history[:-1]:
-            folium.CircleMarker(
-                location=[lat, lon],
-                radius=4,
-                color="#FF6B35",
-                fill=True,
-                fill_color="#FF6B35",
-                fill_opacity=0.7,
-                tooltip=f"Position à {ts} UTC",
-            ).add_to(m)
+            folium.CircleMarker(location=[lat, lon], radius=4, color="#FF6B35", fill=True,
+                                fill_color="#FF6B35", fill_opacity=0.7,
+                                tooltip=f"Position à {ts} UTC").add_to(m)
 
-    # ── MARQUEURS POSITION LIVE (centroïdes des alertes actives) ──
     for alert_id, pos in tornado_positions.items():
         if pos['event'] not in show_events:
             continue
         is_emergency = pos['event'] == "Tornado Emergency"
         color_live   = "#FF0000" if is_emergency else "#FF3B30"
-
+        area_safe    = _html.escape(pos['area'])
+        sev_safe     = _html.escape(pos['severity'])
+        event_safe   = _html.escape(pos['event'])
         popup_html = f"""
         <div style="font-family:monospace;background:#080D1A;color:#E2E8F0;
                     padding:12px;border-radius:8px;border:1px solid {color_live};min-width:220px;">
           <div style="color:{color_live};font-size:10px;letter-spacing:.1em;margin-bottom:6px;">
-            🌪️ {pos['event'].upper()} — POSITION LIVE
+            🌪️ {event_safe.upper()} — POSITION LIVE
           </div>
-          <div style="font-size:13px;font-weight:600;margin-bottom:8px;">{pos['area'][:60]}</div>
-          <div style="font-size:11px;color:#94A3B8;">Sévérité : {pos['severity']}</div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px;">{area_safe[:60]}</div>
+          <div style="font-size:11px;color:#94A3B8;">Sévérité : {sev_safe}</div>
           <div style="font-size:10px;color:#4A6FA5;margin-top:6px;padding-top:6px;
                       border-top:1px solid #1A2540;">
             📍 Position estimée · centroïde du polygone NWS
           </div>
         </div>"""
-
-        # Cercles concentriques (effet radar pulsant)
         for radius, opacity in [(28, 0.04), (18, 0.08), (10, 0.15)]:
-            folium.CircleMarker(
-                location=[pos['lat'], pos['lon']],
-                radius=radius,
-                color=color_live,
-                weight=1,
-                fill=True,
-                fill_color=color_live,
-                fill_opacity=opacity,
-            ).add_to(m)
-
-        # Marqueur principal
+            folium.CircleMarker(location=[pos['lat'], pos['lon']], radius=radius,
+                                color=color_live, weight=1, fill=True,
+                                fill_color=color_live, fill_opacity=opacity).add_to(m)
         folium.Marker(
             location=[pos['lat'], pos['lon']],
             popup=folium.Popup(popup_html, max_width=280),
             tooltip=f"🌪️ LIVE — {pos['event']} · {pos['area'][:40]}",
-            icon=folium.Icon(
-                color="red" if is_emergency else "orange",
-                icon="bolt",
-                prefix="fa",
-            ),
+            icon=folium.Icon(color="red" if is_emergency else "orange", icon="bolt", prefix="fa"),
         ).add_to(m)
 
     return m, count
@@ -575,11 +477,9 @@ def export_csv(features):
     w.writerow(["ID","Event","Zone","Severity","Certainty","Onset","Expires","Headline"])
     for f in features:
         p = f["properties"]
-        w.writerow([
-            p.get("id",""), p.get("event",""), p.get("areaDesc",""),
-            p.get("severity",""), p.get("certainty",""),
-            p.get("onset",""), p.get("expires",""), p.get("headline",""),
-        ])
+        w.writerow([p.get("id",""), p.get("event",""), p.get("areaDesc",""),
+                    p.get("severity",""), p.get("certainty",""),
+                    p.get("onset",""), p.get("expires",""), p.get("headline","")])
     return buf.getvalue()
 
 def export_json(features):
@@ -598,14 +498,14 @@ def export_json(features):
 # ==========================================
 # 🔄  SESSION STATE INIT
 # ==========================================
-if "last_fetch"          not in st.session_state: st.session_state.last_fetch          = time.time()
-if "refresh_interval"    not in st.session_state: st.session_state.refresh_interval    = 60
-if "selected_alert"      not in st.session_state: st.session_state.selected_alert      = None
-if "filter_sev"          not in st.session_state: st.session_state.filter_sev          = "All"
-if "show_events"         not in st.session_state: st.session_state.show_events         = set(NWS_EVENTS)
-if "known_alert_ids"     not in st.session_state: st.session_state.known_alert_ids     = set()
-if "email_enabled"       not in st.session_state: st.session_state.email_enabled       = True
-if "emails_sent"         not in st.session_state: st.session_state.emails_sent         = 0
+if "last_fetch"           not in st.session_state: st.session_state.last_fetch           = time.time()
+if "refresh_interval"     not in st.session_state: st.session_state.refresh_interval     = 60
+if "selected_alert"       not in st.session_state: st.session_state.selected_alert       = None
+if "filter_sev"           not in st.session_state: st.session_state.filter_sev           = "All"
+if "show_events"          not in st.session_state: st.session_state.show_events          = set(NWS_EVENTS)
+if "known_alert_ids"      not in st.session_state: st.session_state.known_alert_ids      = set()
+if "email_enabled"        not in st.session_state: st.session_state.email_enabled        = True
+if "emails_sent"          not in st.session_state: st.session_state.emails_sent          = 0
 if "tornado_trajectories" not in st.session_state: st.session_state.tornado_trajectories = {}
 
 # ==========================================
@@ -634,10 +534,8 @@ st.markdown(f"""
 with st.spinner(""):
     all_features = fetch_all_alerts()
 
-# Tri par sévérité
 all_features.sort(key=lambda f: SEVERITY_ORDER.get(f["properties"].get("severity","Unknown"), 4))
 
-# Positions live des tornades + mise à jour trajectoires
 tornado_positions = extract_tornado_positions(all_features)
 update_trajectories(tornado_positions)
 trajectories = st.session_state.tornado_trajectories
@@ -662,7 +560,6 @@ if st.session_state.email_enabled:
                 "instruction": props.get("instruction", "") or "Mettez-vous à l'abri immédiatement.",
             })
             st.session_state.known_alert_ids.add(fid)
-
     if new_alerts_to_notify:
         sent = send_alert_email(new_alerts_to_notify)
         if sent:
@@ -693,8 +590,7 @@ st.markdown("<div style='height:1.25rem'></div>", unsafe_allow_html=True)
 
 def metric_card(label, value, color, sub):
     st.markdown(f"""
-    <div class="metric-card" style="border-top:2px solid {color};border-radius:12px;
-         background:#080D1A;border:1px solid #0F1E38;padding:1rem 1.25rem;">
+    <div class="metric-card" style="border-top:2px solid {color};">
       <div class="metric-label">{label}</div>
       <div class="metric-value" style="color:{color};">{value}</div>
       <div class="metric-sub">{sub}</div>
@@ -778,7 +674,7 @@ with col_email:
 # ==========================================
 # 🗺️  MAIN CONTENT: MAP + ALERT LIST
 # ==========================================
-st.markdown('<div style="padding: 0.75rem 2rem 0; display:flex; flex-direction:column; gap:1rem;">', unsafe_allow_html=True)
+st.markdown('<div style="padding: 0.75rem 2rem 0;">', unsafe_allow_html=True)
 
 col_map, col_list = st.columns([3, 2], gap="medium")
 
@@ -786,8 +682,8 @@ col_map, col_list = st.columns([3, 2], gap="medium")
 with col_map:
     st.markdown("""
     <div class="panel" style="padding:1rem;">
-      <div class="section-header">
-        <span class="section-title">LIVE RADAR — THREAT POLYGONS</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <span style="font-size:11px;font-family:monospace;letter-spacing:.15em;color:#4A6FA5;text-transform:uppercase;">LIVE RADAR — THREAT POLYGONS</span>
         <span class="section-badge live">● LIVE</span>
       </div>
     </div>
@@ -802,7 +698,6 @@ with col_map:
     if not selected_events:
         selected_events = NWS_EVENTS
 
-    # Appel build_map avec les nouveaux paramètres
     radar_map, poly_count = build_map(
         all_features,
         set(selected_events),
@@ -818,7 +713,6 @@ with col_map:
         use_container_width=True,
     )
 
-    # Légende événements
     legend_parts = []
     for e in NWS_EVENTS:
         col_hex = EVENT_COLORS.get(e, "#6B7280")
@@ -831,7 +725,6 @@ with col_map:
     legend_html = '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">' + "".join(legend_parts) + "</div>"
     st.markdown(legend_html, unsafe_allow_html=True)
 
-    # Légende des éléments live
     n_live = len(tornado_positions)
     if n_live > 0:
         st.markdown(
@@ -843,19 +736,8 @@ with col_map:
             unsafe_allow_html=True
         )
 
-import html as _html
-
 # ---- RIGHT: ALERT LOG ----
 with col_list:
-
-    st.markdown("""
-    <style>
-    @keyframes glow-red    { 0%,100%{box-shadow:0 0 6px rgba(255,59,48,0.3)} 50%{box-shadow:0 0 18px rgba(255,59,48,0.7)} }
-    @keyframes glow-orange { 0%,100%{box-shadow:0 0 4px rgba(245,158,11,0.2)} 50%{box-shadow:0 0 12px rgba(245,158,11,0.5)} }
-    .alert-card-extreme { animation: glow-red 2s infinite; }
-    .alert-card-severe  { animation: glow-orange 3s infinite; }
-    </style>
-    """, unsafe_allow_html=True)
 
     sev_filter = st.radio(
         "Filter",
@@ -893,23 +775,23 @@ with col_list:
         for f in filtered[:20]:
             props = f["properties"]
 
+            # ── Valeurs brutes pour la logique ──────────────────────
+            raw_event = props.get("event",     "Unknown")
+            raw_sev   = props.get("severity",  "Unknown")
+
             # ── Échappement HTML de toutes les données API ──────────
-            event       = _html.escape(props.get("event",       "Unknown"))
+            event       = _html.escape(raw_event)
             area        = _html.escape(props.get("areaDesc",    "Unknown Zone"))
-            sev         = _html.escape(props.get("severity",    "Unknown"))
+            sev         = _html.escape(raw_sev)
             certainty   = _html.escape(props.get("certainty",   "—"))
             instruction = _html.escape(props.get("instruction", "") or "Take shelter immediately.")
 
-            # Pour la logique couleur on utilise la valeur brute (non-escapée)
-            raw_event = props.get("event", "Unknown")
-            raw_sev   = props.get("severity", "Unknown")
-
-            onset_dt  = parse_time(props.get("onset"))
+            onset_dt   = parse_time(props.get("onset"))
             expires_dt = parse_time(props.get("expires"))
-            time_ago  = format_time_ago(onset_dt)
-            color     = EVENT_COLORS.get(raw_event, "#6B7280")
+            time_ago   = format_time_ago(onset_dt)
+            color      = EVENT_COLORS.get(raw_event, "#6B7280")
 
-            # Couleur et animation selon sévérité
+            # Couleur / animation selon sévérité
             if raw_sev == "Extreme":
                 border_color = "#FF3B30"
                 bg_color     = "rgba(255,59,48,0.06)"
@@ -954,7 +836,7 @@ with col_list:
                 expires_str = "—"
                 exp_color   = "#374151"
 
-            onset_str = onset_dt.strftime("%Y-%m-%d %H:%M UTC") if onset_dt else "—"
+            onset_str     = onset_dt.strftime("%Y-%m-%d %H:%M UTC") if onset_dt else "—"
             instr_preview = instruction[:200] + ("…" if len(instruction) > 200 else "")
 
             st.markdown(f"""
@@ -1009,6 +891,9 @@ with col_list:
               </div>
             </div>
             """, unsafe_allow_html=True)
+
+st.markdown('</div>', unsafe_allow_html=True)
+
 # ==========================================
 # 📈  SPARKLINE TIMELINE
 # ==========================================
@@ -1020,11 +905,11 @@ now_h   = datetime.now(timezone.utc).hour
 
 bars_html_parts = []
 for i, b in enumerate(buckets):
-    h          = (now_h - 23 + i) % 24
-    height_px  = max(8, int((b / max_b) * 40))
-    color      = "#FF3B30" if b >= 3 else "#F59E0B" if b >= 1 else "#1A2540"
-    opacity    = "1.0" if i == 23 else "0.7"
-    label      = "NOW" if i == 23 else f"{h:02d}"
+    h         = (now_h - 23 + i) % 24
+    height_px = max(8, int((b / max_b) * 40))
+    color     = "#FF3B30" if b >= 3 else "#F59E0B" if b >= 1 else "#1A2540"
+    opacity   = "1.0" if i == 23 else "0.7"
+    label     = "NOW" if i == 23 else f"{h:02d}"
     bars_html_parts.append(
         f'<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;" title="{h:02d}:00 UTC - {b} alert(s)">'
         f'<div style="width:100%;height:{height_px}px;background:{color};opacity:{opacity};border-radius:2px 2px 0 0;"></div>'
@@ -1048,7 +933,7 @@ components.html(sparkline_html, height=110, scrolling=False)
 # ==========================================
 # 💾  EXPORT + MANUAL REFRESH
 # ==========================================
-st.markdown('<div style="padding: 1rem 2rem 2rem; display:flex; gap:12px; flex-wrap:wrap;">', unsafe_allow_html=True)
+st.markdown('<div style="padding: 1rem 2rem 2rem;">', unsafe_allow_html=True)
 col_csv, col_json, col_reload, col_spacer = st.columns([1, 1, 1, 3])
 
 with col_csv:
