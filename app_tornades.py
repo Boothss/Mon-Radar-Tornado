@@ -300,7 +300,7 @@ NWS_EVENTS = [
     "Flash Flood Warning",
     "Tornado Emergency",
 ]
- 
+
 SEVERITY_ORDER = {
     "Extreme":  0,
     "Severe":   1,
@@ -308,7 +308,7 @@ SEVERITY_ORDER = {
     "Minor":    3,
     "Unknown":  4,
 }
- 
+
 SEV_COLORS = {
     "Extreme":  ("#FF3B30", "sev-extreme",  "tag-extreme"),
     "Severe":   ("#F59E0B", "sev-severe",   "tag-severe"),
@@ -316,7 +316,7 @@ SEV_COLORS = {
     "Minor":    ("#22C55E", "sev-minor",    "tag-info"),
     "Unknown":  ("#374151", "sev-expired",  "tag-info"),
 }
- 
+
 EVENT_COLORS = {
     "Tornado Warning":             "#FF3B30",
     "Tornado Emergency":           "#FF0000",
@@ -324,7 +324,7 @@ EVENT_COLORS = {
     "Severe Thunderstorm Warning": "#F59E0B",
     "Flash Flood Warning":         "#3B82F6",
 }
- 
+
 # ==========================================
 # 🧠  DATA FETCHING
 # ==========================================
@@ -351,7 +351,7 @@ def fetch_all_alerts():
             seen.add(fid)
             unique.append(f)
     return unique
- 
+
 def parse_time(ts):
     if not ts:
         return None
@@ -359,7 +359,7 @@ def parse_time(ts):
         return datetime.fromisoformat(ts.replace("Z", "+00:00"))
     except Exception:
         return None
- 
+
 def format_time_ago(dt):
     if not dt:
         return "—"
@@ -371,12 +371,12 @@ def format_time_ago(dt):
     hrs = mins // 60
     if hrs < 24:  return f"{hrs}h ago"
     return f"{hrs//24}d ago"
- 
+
 # ==========================================
 # 📍  SPC TORNADO REPORTS (trajectoires confirmées)
 # ==========================================
 SPC_REPORTS_URL = "https://www.spc.noaa.gov/climo/reports/today_filtered.csv"
- 
+
 @st.cache_data(ttl=300)  # refresh toutes les 5 min
 def fetch_spc_tornado_reports():
     """Récupère uniquement les tornades confirmées SPC du jour."""
@@ -424,7 +424,7 @@ def fetch_spc_tornado_reports():
         return reports
     except Exception:
         return []
- 
+
 def group_spc_trajectories(reports, max_dist_km=150, max_time_min=60):
     """
     Regroupe les rapports SPC proches dans le temps et l'espace
@@ -433,24 +433,24 @@ def group_spc_trajectories(reports, max_dist_km=150, max_time_min=60):
     """
     if not reports:
         return []
- 
+
     def time_to_min(t_str):
         try:
             h, m = int(t_str[:2]), int(t_str[2:4])
             return h * 60 + m
         except Exception:
             return 0
- 
+
     def dist_km(lat1, lon1, lat2, lon2):
         R = 6371
         dlat = math.radians(lat2 - lat1)
         dlon = math.radians(lon2 - lon1)
         a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
         return R * 2 * math.asin(math.sqrt(a))
- 
+
     groups = []
     used = set()
- 
+
     for i, rep in enumerate(reports):
         if i in used:
             continue
@@ -465,19 +465,19 @@ def group_spc_trajectories(reports, max_dist_km=150, max_time_min=60):
                 group.append(other)
                 used.add(j)
         groups.append(sorted(group, key=lambda x: x['time']))
- 
+
     return groups
- 
+
 # ==========================================
 # 🌪️  TORNADO LIVE POSITION & TRAJECTORY
 # ==========================================
- 
+
 def compute_centroid(coords):
     """Calcule le centroïde d'un polygone GeoJSON → (lat, lon)."""
     lats = [p[1] for p in coords]
     lons = [p[0] for p in coords]
     return sum(lats) / len(lats), sum(lons) / len(lons)
- 
+
 def extract_tornado_positions(features):
     """
     Extrait la position approximative (centroïde du polygone)
@@ -502,7 +502,7 @@ def extract_tornado_positions(features):
                 'onset':    props.get("onset", ""),
             }
     return positions
- 
+
 def update_trajectories(current_positions):
     """
     Ajoute le point courant dans l'historique de chaque tornade.
@@ -510,7 +510,7 @@ def update_trajectories(current_positions):
     """
     if "tornado_trajectories" not in st.session_state:
         st.session_state.tornado_trajectories = {}
- 
+
     for alert_id, pos in current_positions.items():
         hist = st.session_state.tornado_trajectories.get(alert_id, [])
         # N'ajoute que si la position a changé (ou premier point)
@@ -518,7 +518,7 @@ def update_trajectories(current_positions):
             ts = datetime.now(timezone.utc).strftime("%H:%M")
             hist.append((pos['lat'], pos['lon'], ts))
         st.session_state.tornado_trajectories[alert_id] = hist[-20:]
- 
+
 # ==========================================
 # 🗺️  MAP BUILDER  (avec position live + trajectoire + SPC)
 # ==========================================
@@ -534,7 +534,45 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         name="Dark Matter",
         max_zoom=19,
     ).add_to(m)
- 
+
+    # CSS : supprime fond blanc popup + stylise croix + cache attribution
+    m.get_root().html.add_child(folium.Element("""
+        <style>
+        .leaflet-popup-content-wrapper {
+            background: #080D1A !important;
+            border: 1px solid #1A2540 !important;
+            border-radius: 12px !important;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.7) !important;
+            padding: 0 !important;
+        }
+        .leaflet-popup-content {
+            margin: 0 !important;
+            padding: 0 !important;
+            width: auto !important;
+        }
+        .leaflet-popup-tip-container { display: none !important; }
+        .leaflet-popup-close-button {
+            color: #4A6FA5 !important;
+            font-size: 16px !important;
+            font-weight: 400 !important;
+            top: 6px !important;
+            right: 8px !important;
+            width: 22px !important;
+            height: 22px !important;
+            line-height: 22px !important;
+            text-align: center !important;
+            border-radius: 50% !important;
+            background: rgba(255,255,255,0.06) !important;
+            z-index: 10 !important;
+        }
+        .leaflet-popup-close-button:hover {
+            color: #E2E8F0 !important;
+            background: rgba(255,255,255,0.12) !important;
+        }
+        .leaflet-control-attribution { display: none !important; }
+        </style>
+    """))
+
     # ── POLYGONES D'ALERTE (zones rouges) ────────────────────────
     count = 0
     for f in features:
@@ -548,7 +586,7 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         headline    = props.get("headline", event)
         instruction = props.get("instruction", "") or ""
         color       = EVENT_COLORS.get(event, "#6B7280")
- 
+
         if geom and geom.get("type") == "Polygon":
             coords = [[p[1], p[0]] for p in geom["coordinates"][0]]
             popup_html = f"""
@@ -578,7 +616,7 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 tooltip=f"⚠ {event} — {area[:50]}",
             ).add_to(m)
             count += 1
- 
+
     # ── TRAJECTOIRES (historique des positions) ───────────────────
     for alert_id, history in trajectories.items():
         if len(history) < 2:
@@ -604,14 +642,14 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 fill_opacity=0.7,
                 tooltip=f"Position à {ts} UTC",
             ).add_to(m)
- 
+
     # ── MARQUEURS POSITION LIVE (centroïdes des alertes actives) ──
     for alert_id, pos in tornado_positions.items():
         if pos['event'] not in show_events:
             continue
         is_emergency = pos['event'] == "Tornado Emergency"
         color_live   = "#FF0000" if is_emergency else "#FF3B30"
- 
+
         popup_html = f"""
         <div style="font-family:monospace;background:#080D1A;color:#E2E8F0;
                     padding:12px;border-radius:8px;border:1px solid {color_live};min-width:220px;">
@@ -625,7 +663,7 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
             📍 Position estimée · centroïde du polygone NWS
           </div>
         </div>"""
- 
+
         # Cercles concentriques (effet radar pulsant)
         for radius, opacity in [(28, 0.04), (18, 0.08), (10, 0.15)]:
             folium.CircleMarker(
@@ -637,7 +675,7 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 fill_color=color_live,
                 fill_opacity=opacity,
             ).add_to(m)
- 
+
         # Marqueur principal
         folium.Marker(
             location=[pos['lat'], pos['lon']],
@@ -649,12 +687,12 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 prefix="fa",
             ),
         ).add_to(m)
- 
+
     # ── TRAJECTOIRES SPC (tornades confirmées du jour) ───────────
     for group in spc_groups:
         if not group:
             continue
- 
+
         # Ligne pointillée rouge reliant les points dans l'ordre chronologique
         if len(group) >= 2:
             path = [(rep['lat'], rep['lon']) for rep in group]
@@ -666,7 +704,7 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 dash_array="8 5",
                 tooltip="Trajectoire SPC confirmée (~30min délai)",
             ).add_to(m)
- 
+
         # Points pour chaque observation
         for idx, rep in enumerate(group):
             is_last = (idx == len(group) - 1)
@@ -703,9 +741,9 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 popup=folium.Popup(popup_html, max_width=260),
                 tooltip=f"🌪️ {rep['location']}, {rep['state']} · {f_scale} · {rep['time'][:2]}:{rep['time'][2:4]} UTC",
             ).add_to(m)
- 
+
     return m, count
- 
+
 # ==========================================
 # 📊  SPARKLINE DATA
 # ==========================================
@@ -719,7 +757,7 @@ def build_sparkline(features):
             idx = 23 - min(hrs_ago, 23)
             buckets[idx] += 1
     return buckets
- 
+
 # ==========================================
 # 📤  EXPORT HELPERS
 # ==========================================
@@ -735,7 +773,7 @@ def export_csv(features):
             p.get("onset",""), p.get("expires",""), p.get("headline",""),
         ])
     return buf.getvalue()
- 
+
 def export_json(features):
     simplified = []
     for f in features:
@@ -748,7 +786,7 @@ def export_json(features):
             "instruction": p.get("instruction",""),
         })
     return json.dumps(simplified, indent=2, ensure_ascii=False)
- 
+
 # ==========================================
 # 🔄  SESSION STATE INIT
 # ==========================================
@@ -761,7 +799,7 @@ if "known_alert_ids"     not in st.session_state: st.session_state.known_alert_i
 if "email_enabled"       not in st.session_state: st.session_state.email_enabled       = True
 if "emails_sent"         not in st.session_state: st.session_state.emails_sent         = 0
 if "tornado_trajectories" not in st.session_state: st.session_state.tornado_trajectories = {}
- 
+
 # ==========================================
 # 🖥️  TOPBAR
 # ==========================================
@@ -781,25 +819,25 @@ st.markdown(f"""
   </div>
 </div>
 """, unsafe_allow_html=True)
- 
+
 # ==========================================
 # 📡  FETCH DATA
 # ==========================================
 with st.spinner(""):
     all_features = fetch_all_alerts()
- 
+
 # Tri par sévérité
 all_features.sort(key=lambda f: SEVERITY_ORDER.get(f["properties"].get("severity","Unknown"), 4))
- 
+
 # Positions live des tornades + mise à jour trajectoires
 tornado_positions = extract_tornado_positions(all_features)
 update_trajectories(tornado_positions)
 trajectories = st.session_state.tornado_trajectories
- 
+
 # Rapports SPC tornades du jour + regroupement en trajectoires
 spc_reports  = fetch_spc_tornado_reports()
 spc_groups   = group_spc_trajectories(spc_reports)
- 
+
 # ==========================================
 # 📧  DÉTECTION NOUVELLES ALERTES + EMAIL
 # ==========================================
@@ -820,13 +858,13 @@ if st.session_state.email_enabled:
                 "instruction": props.get("instruction", "") or "Mettez-vous à l'abri immédiatement.",
             })
             st.session_state.known_alert_ids.add(fid)
- 
+
     if new_alerts_to_notify:
         sent = send_alert_email(new_alerts_to_notify)
         if sent:
             st.session_state.emails_sent += len(new_alerts_to_notify)
             st.toast(f"📧 Email envoyé — {len(new_alerts_to_notify)} nouvelle(s) alerte(s) !", icon="🌪️")
- 
+
 # ==========================================
 # 📊  COMPUTE STATS
 # ==========================================
@@ -837,18 +875,18 @@ for f in all_features:
     sev = f["properties"].get("severity","Unknown")
     if ev  in event_counts: event_counts[ev]  += 1
     if sev in sev_counts:   sev_counts[sev]   += 1
- 
+
 tornado_warnings    = event_counts.get("Tornado Warning", 0)
 tornado_emergencies = event_counts.get("Tornado Emergency", 0)
 tornado_watches     = event_counts.get("Tornado Watch", 0)
 tstorm_warnings     = event_counts.get("Severe Thunderstorm Warning", 0)
 total_active        = len(all_features)
- 
+
 # ==========================================
 # 📈  METRIC CARDS
 # ==========================================
 st.markdown("<div style='height:1.25rem'></div>", unsafe_allow_html=True)
- 
+
 def metric_card(label, value, color, sub):
     st.markdown(f"""
     <div class="metric-card" style="border-top:2px solid {color};border-radius:12px;
@@ -858,7 +896,7 @@ def metric_card(label, value, color, sub):
       <div class="metric-sub">{sub}</div>
     </div>
     """, unsafe_allow_html=True)
- 
+
 mc1, mc2, mc3, mc4, mc5 = st.columns(5)
 with mc1:
     c = "#FF3B30" if tornado_warnings > 0 else "#22C55E"
@@ -874,24 +912,24 @@ with mc4:
     metric_card("SEVERE T-STORM WARN.", tstorm_warnings, c, "active cells")
 with mc5:
     metric_card("TOTAL ACTIVE ALERTS", total_active, "#3B82F6", "all event types")
- 
+
 # ==========================================
 # 🕒  AUTO-REFRESH BAR
 # ==========================================
 st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
 col_refresh, col_interval, col_email = st.columns([3, 1, 1])
- 
+
 with col_refresh:
     elapsed   = int(time.time() - st.session_state.last_fetch)
     interval  = st.session_state.refresh_interval
     remaining = max(0, interval - elapsed)
     pct       = int((elapsed / interval) * 100) if interval > 0 else 100
- 
+
     if elapsed >= interval:
         st.session_state.last_fetch = time.time()
         fetch_all_alerts.clear()
         st.rerun()
- 
+
     st.markdown(f"""
     <div class="refresh-bar">
       <span class="refresh-label">NEXT SCAN IN</span>
@@ -901,7 +939,7 @@ with col_refresh:
       <span class="refresh-countdown">{remaining}s</span>
     </div>
     """, unsafe_allow_html=True)
- 
+
 with col_interval:
     interval_choice = st.selectbox(
         "REFRESH INTERVAL",
@@ -913,7 +951,7 @@ with col_interval:
     if interval_choice != st.session_state.refresh_interval:
         st.session_state.refresh_interval = interval_choice
         st.session_state.last_fetch = time.time()
- 
+
 with col_email:
     email_on = st.toggle(
         "📧 Alertes email",
@@ -932,14 +970,14 @@ with col_email:
             '<div style="font-size:10px;font-family:monospace;color:#4A6FA5;margin-top:2px;">⏸ DÉSACTIVÉ</div>',
             unsafe_allow_html=True
         )
- 
+
 # ==========================================
 # 🗺️  MAIN CONTENT: MAP + ALERT LIST
 # ==========================================
 st.markdown('<div style="padding: 0.75rem 2rem 0; display:flex; flex-direction:column; gap:1rem;">', unsafe_allow_html=True)
- 
+
 col_map, col_list = st.columns([3, 2], gap="medium")
- 
+
 # ---- LEFT: MAP ----
 with col_map:
     st.markdown("""
@@ -950,7 +988,7 @@ with col_map:
       </div>
     </div>
     """, unsafe_allow_html=True)
- 
+
     selected_events = st.multiselect(
         "VISIBLE LAYERS",
         options=NWS_EVENTS,
@@ -959,7 +997,7 @@ with col_map:
     )
     if not selected_events:
         selected_events = NWS_EVENTS
- 
+
     # Appel build_map avec les nouveaux paramètres
     radar_map, poly_count = build_map(
         all_features,
@@ -968,7 +1006,7 @@ with col_map:
         trajectories,
         spc_groups,
     )
- 
+
     map_result = st_folium(
         radar_map,
         width=None,
@@ -976,7 +1014,7 @@ with col_map:
         returned_objects=[],
         use_container_width=True,
     )
- 
+
     # Légende événements
     legend_parts = []
     for e in NWS_EVENTS:
@@ -989,7 +1027,7 @@ with col_map:
         )
     legend_html = '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">' + "".join(legend_parts) + "</div>"
     st.markdown(legend_html, unsafe_allow_html=True)
- 
+
     # Légende des éléments live
     n_live = len(tornado_positions)
     n_spc  = sum(len(g) for g in spc_groups)
@@ -1011,10 +1049,10 @@ with col_map:
             '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">' + "".join(extras) + "</div>",
             unsafe_allow_html=True
         )
- 
+
 # ---- RIGHT: ALERT LOG ----
 with col_list:
- 
+
     # CSS animations pour les cartes
     st.markdown("""
     <style>
@@ -1030,7 +1068,7 @@ with col_list:
     .alert-card-severe  { animation: glow-orange 3s infinite; }
     </style>
     """, unsafe_allow_html=True)
- 
+
     # ── Filtres sévérité ──────────────────────────────────────────
     sev_filter = st.radio(
         "Filter",
@@ -1038,13 +1076,13 @@ with col_list:
         horizontal=True,
         label_visibility="collapsed",
     )
- 
+
     filtered = all_features
     if sev_filter != "All":
         filtered = [f for f in all_features if f["properties"].get("severity") == sev_filter]
- 
+
     n_filtered = len(filtered)
- 
+
     # ── Header ───────────────────────────────────────────────────
     st.markdown(f"""
     <div style="display:flex;align-items:center;justify-content:space-between;
@@ -1056,7 +1094,7 @@ with col_list:
                    border:1px solid #1A2540;">{n_filtered} EVENTS</span>
     </div>
     """, unsafe_allow_html=True)
- 
+
     # ── Vide ─────────────────────────────────────────────────────
     if not filtered:
         st.markdown("""
@@ -1065,20 +1103,20 @@ with col_list:
           <div style="font-size:13px;">Aucune alerte active</div>
         </div>
         """, unsafe_allow_html=True)
- 
+
     else:
         import streamlit.components.v1 as components
- 
+
         cards_html = """
         <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;600;700&display=swap');
         * { box-sizing:border-box; margin:0; padding:0; }
         body { background:transparent; font-family:'Space Grotesk',sans-serif; padding:4px 2px; }
- 
+
         @keyframes glow-red    { 0%,100%{box-shadow:0 0 5px rgba(255,59,48,0.4);}  50%{box-shadow:0 0 14px rgba(255,59,48,0.8);} }
         @keyframes glow-orange { 0%,100%{box-shadow:0 0 3px rgba(245,158,11,0.3);} 50%{box-shadow:0 0 10px rgba(245,158,11,0.6);} }
         @keyframes pulse-dot   { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
- 
+
         .card {
             border-radius:10px;
             margin-bottom:6px;
@@ -1091,7 +1129,7 @@ with col_list:
         .card.severe  { border-color:rgba(245,158,11,0.35); background:rgba(245,158,11,0.04); animation:glow-orange 3s infinite; }
         .card.moderate{ border-color:rgba(59,130,246,0.3); background:rgba(59,130,246,0.04); }
         .card.unknown { border-color:rgba(55,65,81,0.3); background:rgba(55,65,81,0.04); }
- 
+
         .card-header {
             display:flex;
             align-items:center;
@@ -1125,7 +1163,7 @@ with col_list:
             transition:transform 0.2s ease; margin-left:4px;
         }
         .chevron.open { transform:rotate(180deg); }
- 
+
         .card-detail {
             display:none;
             padding:0 12px 10px 25px;
@@ -1150,7 +1188,7 @@ with col_list:
         }
         </script>
         """
- 
+
         for i, f in enumerate(filtered[:20]):
             props       = f["properties"]
             event_raw   = props.get("event", "Unknown")
@@ -1163,13 +1201,13 @@ with col_list:
             expires_dt  = parse_time(expires_raw)
             time_ago    = format_time_ago(onset_dt)
             instr_raw   = props.get("instruction", "") or "Take shelter immediately."
- 
+
             event       = html_mod.escape(event_raw)
             area        = html_mod.escape(area_raw)
             certainty   = html_mod.escape(certainty_r)
             instruction = html_mod.escape(instr_raw)
             color       = EVENT_COLORS.get(event_raw, "#6B7280")
- 
+
             if sev == "Extreme":
                 card_class="extreme"; bar_color="#FF3B30"
                 badge_bg="rgba(255,59,48,0.2)"; badge_color="#FF6B6B"
@@ -1186,7 +1224,7 @@ with col_list:
                 card_class="unknown"; bar_color="#374151"
                 badge_bg="rgba(55,65,81,0.2)"; badge_color="#94A3B8"
                 tag_bg="rgba(55,65,81,0.12)"; tag_border="rgba(55,65,81,0.4)"; tag_color="#94A3B8"
- 
+
             if expires_dt:
                 now_t     = datetime.now(timezone.utc)
                 mins_left = int((expires_dt - now_t).total_seconds() / 60)
@@ -1199,11 +1237,11 @@ with col_list:
                     expires_str=f"{f'{hrs}h' if hrs else ''}{mins}min"; exp_color="#4A6FA5"
             else:
                 expires_str="—"; exp_color="#4A6FA5"
- 
+
             onset_str   = onset_dt.strftime('%Y-%m-%d %H:%M UTC') if onset_dt else "—"
             instr_short = instruction[:220] + ("…" if len(instruction) > 220 else "")
             area_short  = area[:55] + ("…" if len(area) > 55 else "")
- 
+
             cards_html += f"""
             <div class="card {card_class}" onclick="toggle({i})">
               <div class="card-header">
@@ -1236,21 +1274,21 @@ with col_list:
               </div>
             </div>
             """
- 
+
         card_height = min(len(filtered[:20]) * 90 + 200, 850)
         components.html(cards_html, height=card_height, scrolling=True)
- 
+
 st.markdown('</div>', unsafe_allow_html=True)
- 
+
 # ==========================================
 # 📈  SPARKLINE TIMELINE
 # ==========================================
 import streamlit.components.v1 as components
- 
+
 buckets = build_sparkline(all_features)
 max_b   = max(buckets) if max(buckets) > 0 else 1
 now_h   = datetime.now(timezone.utc).hour
- 
+
 bars_html_parts = []
 for i, b in enumerate(buckets):
     h          = (now_h - 23 + i) % 24
@@ -1264,7 +1302,7 @@ for i, b in enumerate(buckets):
         f'<div style="font-size:9px;font-family:monospace;color:#374151;">{label}</div>'
         f'</div>'
     )
- 
+
 sparkline_html = """
 <div style="background:#080D1A;border:1px solid #0F1E38;border-radius:16px;padding:1rem 1.25rem;">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
@@ -1277,13 +1315,13 @@ sparkline_html = """
 </div>
 """
 components.html(sparkline_html, height=110, scrolling=False)
- 
+
 # ==========================================
 # 💾  EXPORT + MANUAL REFRESH
 # ==========================================
 st.markdown('<div style="padding: 1rem 2rem 2rem; display:flex; gap:12px; flex-wrap:wrap;">', unsafe_allow_html=True)
 col_csv, col_json, col_reload, col_spacer = st.columns([1, 1, 1, 3])
- 
+
 with col_csv:
     st.download_button(
         "⬇ Export CSV",
@@ -1291,7 +1329,7 @@ with col_csv:
         file_name=f"vortex_alerts_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv",
     )
- 
+
 with col_json:
     st.download_button(
         "⬇ Export JSON",
@@ -1299,15 +1337,15 @@ with col_json:
         file_name=f"vortex_alerts_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
         mime="application/json",
     )
- 
+
 with col_reload:
     if st.button("↺  Force Scan"):
         fetch_all_alerts.clear()
         st.session_state.last_fetch = time.time()
         st.rerun()
- 
+
 st.markdown('</div>', unsafe_allow_html=True)
- 
+
 # ==========================================
 # ⏱️  AUTO-RERUN (countdown ticker)
 # ==========================================
