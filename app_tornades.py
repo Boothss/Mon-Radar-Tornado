@@ -130,7 +130,6 @@ html, body, [data-testid="stAppViewContainer"],
     color: #E2E8F0 !important;
     font-family: 'Space Grotesk', sans-serif !important;
 }
-
     header[data-testid="stHeader"]  { display: none !important; }
 [data-testid="stToolbar"]       { display: none !important; }
 [data-testid="stDecoration"]    { display: none !important; }
@@ -373,6 +372,44 @@ def format_time_ago(dt):
     return f"{hrs//24}d ago"
 
 # ==========================================
+# 🗺️  ZONE GEOMETRY (comtés sans polygone)
+# ==========================================
+@st.cache_data(ttl=86400)  # cache 24h — les frontières de comtés ne changent pas
+def fetch_zone_geometry(zone_url):
+    """Récupère le polygone d'un comté/zone NWS depuis son URL."""
+    try:
+        r = requests.get(zone_url, timeout=8,
+                         headers={"User-Agent": "VORTEX-SWI/2.0"})
+        r.raise_for_status()
+        data = r.json()
+        geom = data.get("geometry")
+        if geom:
+            return geom
+    except Exception:
+        pass
+    return None
+
+def get_alert_geometries(feature):
+    """
+    Retourne la liste de géométries pour une alerte.
+    Si la feature a un polygone direct → le retourne.
+    Sinon → récupère les géométries des zones affectées (comtés).
+    """
+    geom = feature.get("geometry")
+    if geom and geom.get("type") == "Polygon":
+        return [geom]
+
+    # Pas de polygone direct → on cherche les zones affectées
+    props       = feature["properties"]
+    zone_urls   = props.get("affectedZones", [])
+    geometries  = []
+    for url in zone_urls[:8]:  # max 8 zones pour éviter trop de requêtes
+        g = fetch_zone_geometry(url)
+        if g:
+            geometries.append(g)
+    return geometries
+
+# ==========================================
 # 📍  SPC TORNADO REPORTS (trajectoires confirmées)
 # ==========================================
 SPC_REPORTS_URL = "https://www.spc.noaa.gov/climo/reports/today_filtered.csv"
@@ -580,42 +617,55 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         event = props.get("event", "")
         if event not in show_events:
             continue
-        geom        = f.get("geometry")
         sev         = props.get("severity", "Unknown")
         area        = props.get("areaDesc", "Unknown zone")
         headline    = props.get("headline", event)
         instruction = props.get("instruction", "") or ""
         color       = EVENT_COLORS.get(event, "#6B7280")
 
-        if geom and geom.get("type") == "Polygon":
-            coords = [[p[1], p[0]] for p in geom["coordinates"][0]]
-            popup_html = f"""
-            <div style="font-family:'Space Grotesk',sans-serif;background:#080D1A;color:#E2E8F0;
-                        border-radius:10px;padding:14px;min-width:240px;max-width:300px;
-                        border:1px solid {color}40;">
-              <div style="font-size:10px;font-family:monospace;color:{color};letter-spacing:.1em;
-                          text-transform:uppercase;margin-bottom:6px;">{event}</div>
-              <div style="font-size:14px;font-weight:600;margin-bottom:8px;">{area[:60]}</div>
-              <div style="font-size:11px;color:#94A3B8;margin-bottom:8px;">{headline[:120]}</div>
-              <div style="font-size:11px;border-left:2px solid {color};padding-left:8px;
-                          color:#CBD5E1;line-height:1.5;">
-                {(instruction[:200]+'…') if len(instruction) > 200 else instruction or 'No specific instructions.'}
-              </div>
-              <div style="margin-top:10px;font-size:10px;font-family:monospace;color:#374151;">
-                Severity: {sev}
-              </div>
-            </div>"""
-            folium.Polygon(
-                locations=coords,
-                color=color,
-                weight=2,
-                fill=True,
-                fill_color=color,
-                fill_opacity=0.18,
-                popup=folium.Popup(popup_html, max_width=320),
-                tooltip=f"⚠ {event} — {area[:50]}",
-            ).add_to(m)
-            count += 1
+        # Récupère toutes les géométries (polygone direct OU comtés)
+        geometries = get_alert_geometries(f)
+        if not geometries:
+            continue
+
+        popup_html = f"""
+        <div style="font-family:'Space Grotesk',sans-serif;background:#080D1A;color:#E2E8F0;
+                    border-radius:10px;padding:14px;min-width:240px;max-width:300px;">
+          <div style="font-size:10px;font-family:monospace;color:{color};letter-spacing:.1em;
+                      text-transform:uppercase;margin-bottom:6px;">{event}</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:8px;">{area[:60]}</div>
+          <div style="font-size:11px;color:#94A3B8;margin-bottom:8px;">{headline[:120]}</div>
+          <div style="font-size:11px;border-left:2px solid {color};padding-left:8px;
+                      color:#CBD5E1;line-height:1.5;">
+            {(instruction[:200]+'…') if len(instruction) > 200 else instruction or 'No specific instructions.'}
+          </div>
+          <div style="margin-top:10px;font-size:10px;font-family:monospace;color:#374151;">
+            Severity: {sev}
+          </div>
+        </div>"""
+
+        for geom in geometries:
+            # Gère Polygon et MultiPolygon
+            if geom.get("type") == "Polygon":
+                poly_list = [geom["coordinates"]]
+            elif geom.get("type") == "MultiPolygon":
+                poly_list = geom["coordinates"]
+            else:
+                continue
+
+            for poly_coords in poly_list:
+                coords = [[p[1], p[0]] for p in poly_coords[0]]
+                folium.Polygon(
+                    locations=coords,
+                    color=color,
+                    weight=2,
+                    fill=True,
+                    fill_color=color,
+                    fill_opacity=0.18,
+                    popup=folium.Popup(popup_html, max_width=320),
+                    tooltip=f"⚠ {event} — {area[:50]}",
+                ).add_to(m)
+                count += 1
 
     # ── TRAJECTOIRES (historique des positions) ───────────────────
     for alert_id, history in trajectories.items():
