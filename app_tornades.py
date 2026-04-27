@@ -13,6 +13,9 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+# ==========================================
+# 📧  EMAIL CONFIG
+# ==========================================
 EMAIL_SENDER   = "alexbailly82@gmail.com"
 EMAIL_RECEIVER = "alexbailly82@gmail.com"
 EMAIL_PASSWORD = "ojfwwjozkjxjlszn"
@@ -102,6 +105,9 @@ def send_alert_email(new_alerts):
         st.toast(f"Erreur email : {e}", icon="❌")
         return False
 
+# ==========================================
+# ⚙️  PAGE CONFIG
+# ==========================================
 st.set_page_config(
     page_title="VORTEX · Severe Weather Intelligence",
     page_icon="🌪️",
@@ -109,6 +115,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# ==========================================
+# 🎨  CUSTOM CSS
+# ==========================================
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -258,6 +267,7 @@ div[data-testid="column"] > div { height: 100%; }
     letter-spacing: 0.05em !important; transition: all 0.15s !important; width: 100% !important;
 }
 .stButton > button:hover { background: #0F1E38 !important; border-color: #3B82F6 !important; }
+/* Cache les boutons layer toggle — déclencheurs invisibles */
 [data-testid="stHorizontalBlock"] .stButton > button {
     opacity: 0 !important;
     height: 2px !important;
@@ -285,6 +295,9 @@ div[data-testid="stHorizontalBlock"] { gap: 1rem; }
 </style>
 """, unsafe_allow_html=True)
 
+# ==========================================
+# 🌐  API ENDPOINTS
+# ==========================================
 NWS_EVENTS = [
     "Tornado Warning",
     "Tornado Watch",
@@ -310,13 +323,16 @@ SEV_COLORS = {
 }
 
 EVENT_COLORS = {
-    "Tornado Emergency":           "#A855F7",
-    "Tornado Warning":             "#FF3B30",
-    "Tornado Watch":               "#F59E0B",
-    "Severe Thunderstorm Warning": "#EAB308",
-    "Flash Flood Warning":         "#3B82F6",
+    "Tornado Emergency":           "#A855F7",  # 🟣 Violet
+    "Tornado Warning":             "#FF3B30",  # 🔴 Rouge vif
+    "Tornado Watch":               "#F59E0B",  # 🟡 Orange
+    "Severe Thunderstorm Warning": "#EAB308",  # 🟡 Jaune
+    "Flash Flood Warning":         "#3B82F6",  # 🔵 Bleu
 }
 
+# ==========================================
+# 🧠  DATA FETCHING
+# ==========================================
 @st.cache_data(ttl=60)
 def fetch_all_alerts():
     all_features = []
@@ -361,8 +377,12 @@ def format_time_ago(dt):
     if hrs < 24:  return f"{hrs}h ago"
     return f"{hrs//24}d ago"
 
-@st.cache_data(ttl=86400)
+# ==========================================
+# 🗺️  ZONE GEOMETRY (comtés sans polygone)
+# ==========================================
+@st.cache_data(ttl=86400)  # cache 24h — les frontières de comtés ne changent pas
 def fetch_zone_geometry(zone_url):
+    """Récupère le polygone d'un comté/zone NWS depuis son URL."""
     try:
         r = requests.get(zone_url, timeout=8,
                          headers={"User-Agent": "VORTEX-SWI/2.0"})
@@ -376,22 +396,33 @@ def fetch_zone_geometry(zone_url):
     return None
 
 def get_alert_geometries(feature):
+    """
+    Retourne la liste de géométries pour une alerte.
+    Si la feature a un polygone direct → le retourne.
+    Sinon → récupère les géométries des zones affectées (comtés).
+    """
     geom = feature.get("geometry")
     if geom and geom.get("type") == "Polygon":
         return [geom]
+
+    # Pas de polygone direct → on cherche les zones affectées
     props       = feature["properties"]
     zone_urls   = props.get("affectedZones", [])
     geometries  = []
-    for url in zone_urls[:8]:
+    for url in zone_urls[:8]:  # max 8 zones pour éviter trop de requêtes
         g = fetch_zone_geometry(url)
         if g:
             geometries.append(g)
     return geometries
 
+# ==========================================
+# 📍  SPC TORNADO REPORTS (trajectoires confirmées)
+# ==========================================
 SPC_REPORTS_URL = "https://www.spc.noaa.gov/climo/reports/today_filtered.csv"
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300)  # refresh toutes les 5 min
 def fetch_spc_tornado_reports():
+    """Récupère uniquement les tornades confirmées SPC du jour."""
     try:
         r = requests.get(SPC_REPORTS_URL, timeout=10,
                          headers={"User-Agent": "VORTEX-SWI/2.0"})
@@ -417,6 +448,7 @@ def fetch_spc_tornado_reports():
                         lon = float(parts[6].strip())
                         if lat == 0 and lon == 0:
                             continue
+                        # Parse heure pour tri chronologique
                         t_str = parts[0].strip()
                         reports.append({
                             'time':     t_str,
@@ -430,12 +462,18 @@ def fetch_spc_tornado_reports():
                         })
                     except (ValueError, IndexError):
                         pass
+        # Trie par heure pour avoir les trajectoires dans l'ordre
         reports.sort(key=lambda x: x['time'])
         return reports
     except Exception:
         return []
 
 def group_spc_trajectories(reports, max_dist_km=150, max_time_min=60):
+    """
+    Regroupe les rapports SPC proches dans le temps et l'espace
+    pour reconstruire des trajectoires de tornades distinctes.
+    Retourne une liste de groupes (chaque groupe = une tornade).
+    """
     if not reports:
         return []
 
@@ -473,12 +511,21 @@ def group_spc_trajectories(reports, max_dist_km=150, max_time_min=60):
 
     return groups
 
+# ==========================================
+# 🌪️  TORNADO LIVE POSITION & TRAJECTORY
+# ==========================================
+
 def compute_centroid(coords):
+    """Calcule le centroïde d'un polygone GeoJSON → (lat, lon)."""
     lats = [p[1] for p in coords]
     lons = [p[0] for p in coords]
     return sum(lats) / len(lats), sum(lons) / len(lons)
 
 def extract_tornado_positions(features):
+    """
+    Extrait la position approximative (centroïde du polygone)
+    de chaque Tornado Warning / Emergency actif.
+    """
     positions = {}
     for f in features:
         props = f["properties"]
@@ -500,16 +547,24 @@ def extract_tornado_positions(features):
     return positions
 
 def update_trajectories(current_positions):
+    """
+    Ajoute le point courant dans l'historique de chaque tornade.
+    Conserve les 20 dernières positions par alerte.
+    """
     if "tornado_trajectories" not in st.session_state:
         st.session_state.tornado_trajectories = {}
 
     for alert_id, pos in current_positions.items():
         hist = st.session_state.tornado_trajectories.get(alert_id, [])
+        # N'ajoute que si la position a changé (ou premier point)
         if not hist or (hist[-1][0] != pos['lat'] or hist[-1][1] != pos['lon']):
             ts = datetime.now(timezone.utc).strftime("%H:%M")
             hist.append((pos['lat'], pos['lon'], ts))
         st.session_state.tornado_trajectories[alert_id] = hist[-20:]
 
+# ==========================================
+# 🗺️  MAP BUILDER  (avec position live + trajectoire + SPC)
+# ==========================================
 def build_map(features, show_events, tornado_positions, trajectories, spc_groups):
     m = folium.Map(
         location=[38.0, -95.0],
@@ -523,6 +578,7 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         max_zoom=19,
     ).add_to(m)
 
+    # CSS : supprime fond blanc popup + stylise croix + cache attribution
     m.get_root().html.add_child(folium.Element("""
         <style>
         .leaflet-popup-content-wrapper {
@@ -560,6 +616,7 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         </style>
     """))
 
+    # ── POLYGONES D'ALERTE (zones rouges) ────────────────────────
     count = 0
     for f in features:
         props = f["properties"]
@@ -572,21 +629,26 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         instruction = props.get("instruction", "") or ""
         color       = EVENT_COLORS.get(event, "#6B7280")
 
+        # Vérifie si polygone direct disponible
         has_direct_polygon = (
             f.get("geometry") and
             f["geometry"].get("type") == "Polygon"
         )
 
+        # Récupère toutes les géométries
         geometries = get_alert_geometries(f)
         if not geometries:
             continue
 
+        # Style selon type de géométrie
         if has_direct_polygon:
+            # Polygone précis NWS → rempli, bien visible
             fill_opacity = 0.22
             weight       = 2
             dash         = None
             label_suffix = ""
         else:
+            # Contour de comté → bordure uniquement, très transparent
             fill_opacity = 0.06
             weight       = 1.5
             dash         = "6 4"
@@ -633,10 +695,12 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 ).add_to(m)
                 count += 1
 
+    # ── TRAJECTOIRES (historique des positions) ───────────────────
     for alert_id, history in trajectories.items():
         if len(history) < 2:
             continue
         path = [(lat, lon) for lat, lon, _ in history]
+        # Ligne pointillée blanche
         folium.PolyLine(
             locations=path,
             color="#FFFFFF",
@@ -645,6 +709,7 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
             dash_array="6 4",
             tooltip="Trajectoire de la tornade",
         ).add_to(m)
+        # Points intermédiaires (positions passées)
         for lat, lon, ts in history[:-1]:
             folium.CircleMarker(
                 location=[lat, lon],
@@ -656,6 +721,7 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 tooltip=f"Position à {ts} UTC",
             ).add_to(m)
 
+    # ── MARQUEURS POSITION LIVE (centroïdes des alertes actives) ──
     for alert_id, pos in tornado_positions.items():
         if pos['event'] not in show_events:
             continue
@@ -676,6 +742,7 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
           </div>
         </div>"""
 
+        # Cercles concentriques (effet radar pulsant)
         for radius, opacity in [(28, 0.04), (18, 0.08), (10, 0.15)]:
             folium.CircleMarker(
                 location=[pos['lat'], pos['lon']],
@@ -687,6 +754,7 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 fill_opacity=opacity,
             ).add_to(m)
 
+        # Marqueur principal
         folium.Marker(
             location=[pos['lat'], pos['lon']],
             popup=folium.Popup(popup_html, max_width=280),
@@ -698,10 +766,12 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
             ),
         ).add_to(m)
 
+    # ── TRAJECTOIRES SPC (tornades confirmées du jour) ───────────
     for group in spc_groups:
         if not group:
             continue
 
+        # Ligne pointillée rouge reliant les points dans l'ordre chronologique
         if len(group) >= 2:
             path = [(rep['lat'], rep['lon']) for rep in group]
             folium.PolyLine(
@@ -713,8 +783,10 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 tooltip="Trajectoire SPC confirmée (~30min délai)",
             ).add_to(m)
 
+        # Points pour chaque observation
         for idx, rep in enumerate(group):
             is_last = (idx == len(group) - 1)
+            # Dernier point = plus grand (observation la plus récente)
             radius     = 10 if is_last else 7
             fill_op    = 0.9 if is_last else 0.7
             f_scale    = rep['f_scale'] or 'NC'
@@ -750,6 +822,9 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
 
     return m, count
 
+# ==========================================
+# 📊  SPARKLINE DATA
+# ==========================================
 def build_sparkline(features):
     now = datetime.now(timezone.utc)
     buckets = [0] * 24
@@ -761,6 +836,9 @@ def build_sparkline(features):
             buckets[idx] += 1
     return buckets
 
+# ==========================================
+# 📤  EXPORT HELPERS
+# ==========================================
 def export_csv(features):
     buf = io.StringIO()
     w = csv.writer(buf)
@@ -787,6 +865,9 @@ def export_json(features):
         })
     return json.dumps(simplified, indent=2, ensure_ascii=False)
 
+# ==========================================
+# 🔄  SESSION STATE INIT
+# ==========================================
 if "last_fetch"          not in st.session_state: st.session_state.last_fetch          = time.time()
 if "refresh_interval"    not in st.session_state: st.session_state.refresh_interval    = 60
 if "selected_alert"      not in st.session_state: st.session_state.selected_alert      = None
@@ -797,6 +878,9 @@ if "email_enabled"       not in st.session_state: st.session_state.email_enabled
 if "emails_sent"         not in st.session_state: st.session_state.emails_sent         = 0
 if "tornado_trajectories" not in st.session_state: st.session_state.tornado_trajectories = {}
 
+# ==========================================
+# 🖥️  TOPBAR
+# ==========================================
 now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S UTC")
 st.markdown(f"""
 <div class="vortex-topbar">
@@ -814,18 +898,27 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# ==========================================
+# 📡  FETCH DATA
+# ==========================================
 with st.spinner(""):
     all_features = fetch_all_alerts()
 
+# Tri par sévérité
 all_features.sort(key=lambda f: SEVERITY_ORDER.get(f["properties"].get("severity","Unknown"), 4))
 
+# Positions live des tornades + mise à jour trajectoires
 tornado_positions = extract_tornado_positions(all_features)
 update_trajectories(tornado_positions)
 trajectories = st.session_state.tornado_trajectories
 
+# Rapports SPC tornades du jour + regroupement en trajectoires
 spc_reports  = fetch_spc_tornado_reports()
 spc_groups   = group_spc_trajectories(spc_reports)
 
+# ==========================================
+# 📧  DÉTECTION NOUVELLES ALERTES + EMAIL
+# ==========================================
 if st.session_state.email_enabled:
     new_alerts_to_notify = []
     for f in all_features:
@@ -850,6 +943,9 @@ if st.session_state.email_enabled:
             st.session_state.emails_sent += len(new_alerts_to_notify)
             st.toast(f"📧 Email envoyé — {len(new_alerts_to_notify)} nouvelle(s) alerte(s) !", icon="🌪️")
 
+# ==========================================
+# 📊  COMPUTE STATS
+# ==========================================
 event_counts = {e: 0 for e in NWS_EVENTS}
 sev_counts   = {"Extreme": 0, "Severe": 0, "Moderate": 0, "Minor": 0}
 for f in all_features:
@@ -864,6 +960,9 @@ tornado_watches     = event_counts.get("Tornado Watch", 0)
 tstorm_warnings     = event_counts.get("Severe Thunderstorm Warning", 0)
 total_active        = len(all_features)
 
+# ==========================================
+# 📈  METRIC CARDS
+# ==========================================
 st.markdown("<div style='height:1.25rem'></div>", unsafe_allow_html=True)
 
 def metric_card(label, value, color, sub):
@@ -892,6 +991,9 @@ with mc4:
 with mc5:
     metric_card("TOTAL ACTIVE ALERTS", total_active, "#3B82F6", "all event types")
 
+# ==========================================
+# 🕒  AUTO-REFRESH BAR
+# ==========================================
 st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
 col_refresh, col_interval, col_email = st.columns([3, 1, 1])
 
@@ -947,10 +1049,14 @@ with col_email:
             unsafe_allow_html=True
         )
 
+# ==========================================
+# 🗺️  MAIN CONTENT: MAP + ALERT LIST
+# ==========================================
 st.markdown('<div style="padding: 0.75rem 2rem 0; display:flex; flex-direction:column; gap:1rem;">', unsafe_allow_html=True)
 
 col_map, col_list = st.columns([3, 2], gap="medium")
 
+# ---- LEFT: MAP ----
 with col_map:
     st.markdown("""
     <div class="panel" style="padding:1rem;">
@@ -961,95 +1067,92 @@ with col_map:
     </div>
     """, unsafe_allow_html=True)
 
+    # ── LAYER TOGGLES session state ───────────────────────────────
     if "active_layers" not in st.session_state:
         st.session_state.active_layers = {e: True for e in NWS_EVENTS}
 
-    EVENT_ICONS = {
-        "Tornado Emergency":           "🟣",
-        "Tornado Warning":             "🔴",
-        "Tornado Watch":               "🟡",
-        "Severe Thunderstorm Warning": "🟡",
-        "Flash Flood Warning":         "🔵",
-    }
-    EVENT_SHORT2 = {
-        "Tornado Emergency":           "T. Emergency",
-        "Tornado Warning":             "T. Warning",
-        "Tornado Watch":               "T. Watch",
-        "Severe Thunderstorm Warning": "Severe T-Storm",
-        "Flash Flood Warning":         "Flash Flood",
-    }
     ROW1 = ["Severe Thunderstorm Warning", "Flash Flood Warning", "Tornado Watch"]
     ROW2 = ["Tornado Warning", "Tornado Emergency"]
 
-    # ── LIGNE 1 — 3 chips côte à côte ────────────────────────────
+    EVENT_SHORT2 = {
+        "Tornado Emergency":           "🟣 T.Emergency",
+        "Tornado Warning":             "🔴 T.Warning",
+        "Tornado Watch":               "🟡 T.Watch",
+        "Severe Thunderstorm Warning": "🟡 T-Storm",
+        "Flash Flood Warning":         "🔵 Flood",
+    }
+
+    # CSS dynamique pour chaque bouton chip
+    chip_css = "<style>"
+    for event in NWS_EVENTS:
+        color = EVENT_COLORS.get(event, "#6B7280")
+        idx   = NWS_EVENTS.index(event)
+        is_on = st.session_state.active_layers.get(event, True)
+        r,g,b = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
+        if is_on:
+            chip_css += f"""
+            div[data-testid="stButton"]:has(button[kind="secondary"][data-chip="{idx}"]) button,
+            #chip_{idx} button {{
+                background: rgba({r},{g},{b},0.15) !important;
+                border: 1px solid rgba({r},{g},{b},0.6) !important;
+                color: {color} !important;
+                box-shadow: 0 0 8px rgba({r},{g},{b},0.25) !important;
+                text-decoration: none !important;
+                opacity: 1 !important;
+            }}"""
+        else:
+            chip_css += f"""
+            #chip_{idx} button {{
+                background: rgba(255,255,255,0.02) !important;
+                border: 1px solid #1A2540 !important;
+                color: #374151 !important;
+                text-decoration: line-through !important;
+                opacity: 0.6 !important;
+                box-shadow: none !important;
+            }}"""
+    chip_css += """
+    div[data-testid="stButton"] button {
+        border-radius: 8px !important;
+        font-family: 'JetBrains Mono', monospace !important;
+        font-size: 10px !important;
+        font-weight: 600 !important;
+        letter-spacing: .05em !important;
+        padding: 6px 4px !important;
+        width: 100% !important;
+        transition: all 0.2s !important;
+        cursor: pointer !important;
+    }
+    </style>"""
+    st.markdown(chip_css, unsafe_allow_html=True)
+
+    # Ligne 1 — 3 chips côte à côte
     r1c1, r1c2, r1c3 = st.columns(3)
     for col, event in zip([r1c1, r1c2, r1c3], ROW1):
-        color  = EVENT_COLORS.get(event, "#6B7280")
-        cnt    = event_counts.get(event, 0)
-        is_on  = st.session_state.active_layers.get(event, True)
-        icon   = EVENT_ICONS[event]
-        short  = EVENT_SHORT2[event]
-        r,g,b  = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
-        idx    = NWS_EVENTS.index(event)
-        if is_on:
-            cs = f"background:rgba({r},{g},{b},0.12);border:1px solid rgba({r},{g},{b},0.55);color:{color};box-shadow:0 0 6px rgba({r},{g},{b},0.2);"
-            cc = color
-        else:
-            cs = "background:rgba(255,255,255,0.02);border:1px solid #1A2540;color:#374151;text-decoration:line-through;"
-            cc = "#374151"
+        cnt   = event_counts.get(event, 0)
+        is_on = st.session_state.active_layers.get(event, True)
+        label = f"{EVENT_SHORT2[event]}\n{'  ' + str(cnt)}"
         with col:
-            st.markdown(f"""
-            <div style="{cs}border-radius:8px;padding:6px 4px;text-align:center;
-                        font-family:monospace;font-size:9px;line-height:1.4;
-                        transition:all 0.2s;cursor:pointer;">
-              <div>{icon} {short}</div>
-              <div style="font-size:13px;font-weight:700;color:{cc};">{cnt}</div>
-            </div>""", unsafe_allow_html=True)
-            if st.button("toggle", key=f"chip_{idx}"):
+            if st.button(
+                f"{EVENT_SHORT2[event]} ({cnt})",
+                key=f"chip_{NWS_EVENTS.index(event)}",
+            ):
                 st.session_state.active_layers[event] = not is_on
                 st.rerun()
 
-    # ── LIGNE 2 — 2 chips côte à côte (plus grandes) ─────────────
+    # Ligne 2 — 2 chips côte à côte (plus grandes)
     r2c1, r2c2 = st.columns(2)
     for col, event in zip([r2c1, r2c2], ROW2):
-        color  = EVENT_COLORS.get(event, "#6B7280")
-        cnt    = event_counts.get(event, 0)
-        is_on  = st.session_state.active_layers.get(event, True)
-        icon   = EVENT_ICONS[event]
-        short  = EVENT_SHORT2[event]
-        r,g,b  = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
-        idx    = NWS_EVENTS.index(event)
-        if is_on:
-            cs = f"background:rgba({r},{g},{b},0.15);border:1px solid rgba({r},{g},{b},0.65);color:{color};box-shadow:0 0 10px rgba({r},{g},{b},0.3);"
-            cc = "#FFFFFF"
-        else:
-            cs = "background:rgba(255,255,255,0.02);border:1px solid #1A2540;color:#374151;text-decoration:line-through;"
-            cc = "#374151"
+        cnt   = event_counts.get(event, 0)
+        is_on = st.session_state.active_layers.get(event, True)
         with col:
-            st.markdown(f"""
-            <div style="{cs}border-radius:10px;padding:8px 6px;text-align:center;
-                        font-family:monospace;font-size:10px;font-weight:600;
-                        line-height:1.5;transition:all 0.2s;cursor:pointer;">
-              <div>{icon} {short}</div>
-              <div style="font-size:16px;font-weight:800;color:{cc};">{cnt}</div>
-            </div>""", unsafe_allow_html=True)
-            if st.button("toggle", key=f"chip_{idx}"):
+            if st.button(
+                f"{EVENT_SHORT2[event]} ({cnt})",
+                key=f"chip_{NWS_EVENTS.index(event)}",
+            ):
                 st.session_state.active_layers[event] = not is_on
                 st.rerun()
 
-    st.markdown("""
-    <style>
-    div[data-testid="column"] .stButton > button {
-        opacity: 0 !important; height: 4px !important;
-        min-height: 0 !important; padding: 0 !important;
-        margin: 0 !important; border: none !important;
-        background: transparent !important; width: 100% !important;
-        cursor: pointer !important; position: relative !important;
-        top: -52px !important; z-index: 10 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
+    # ── CARTE ─────────────────────────────────────────────────────
     selected_events = [e for e, v in st.session_state.active_layers.items() if v]
     if not selected_events:
         selected_events = list(NWS_EVENTS)
@@ -1070,6 +1173,7 @@ with col_map:
         use_container_width=True,
     )
 
+    # ── LÉGENDE sous la carte ─────────────────────────────────────
     st.markdown("""
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
       <span style="font-size:10px;font-family:monospace;padding:2px 8px;border-radius:4px;
@@ -1083,6 +1187,7 @@ with col_map:
     </div>
     """, unsafe_allow_html=True)
 
+    # Légende des éléments live
     n_live = len(tornado_positions)
     n_spc  = sum(len(g) for g in spc_groups)
     extras = []
@@ -1104,8 +1209,10 @@ with col_map:
             unsafe_allow_html=True
         )
 
+# ---- RIGHT: ALERT LOG ----
 with col_list:
 
+    # CSS animations pour les cartes
     st.markdown("""
     <style>
     @keyframes glow-red {
@@ -1121,6 +1228,7 @@ with col_list:
     </style>
     """, unsafe_allow_html=True)
 
+    # ── Filtres sévérité ──────────────────────────────────────────
     sev_filter = st.radio(
         "Filter",
         ["All", "Extreme", "Severe", "Moderate"],
@@ -1134,6 +1242,7 @@ with col_list:
 
     n_filtered = len(filtered)
 
+    # ── Header ───────────────────────────────────────────────────
     st.markdown(f"""
     <div style="display:flex;align-items:center;justify-content:space-between;
                 margin-bottom:10px;padding:0 2px;">
@@ -1145,6 +1254,7 @@ with col_list:
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Vide ─────────────────────────────────────────────────────
     if not filtered:
         st.markdown("""
         <div style="text-align:center;padding:3rem 1rem;color:#4A6FA5;font-family:monospace;">
@@ -1255,8 +1365,10 @@ with col_list:
             area        = html_mod.escape(area_raw)
             certainty   = html_mod.escape(certainty_r)
             instruction = html_mod.escape(instr_raw)
+            # Couleur basée sur le TYPE d'événement (cohérent avec la carte)
             color       = EVENT_COLORS.get(event_raw, "#6B7280")
 
+            # Style de carte basé sur sévérité (glow) + couleur sur event type
             if sev == "Extreme":
                 anim_class = "extreme"
             elif sev == "Severe":
@@ -1264,6 +1376,7 @@ with col_list:
             else:
                 anim_class = ""
 
+            # Couleurs dérivées de la couleur d'événement
             bar_color   = color
             badge_bg    = f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.18)"
             badge_color = color
@@ -1326,6 +1439,9 @@ with col_list:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
+# ==========================================
+# 📈  SPARKLINE TIMELINE
+# ==========================================
 import streamlit.components.v1 as components
 
 buckets = build_sparkline(all_features)
@@ -1359,6 +1475,9 @@ sparkline_html = """
 """
 components.html(sparkline_html, height=110, scrolling=False)
 
+# ==========================================
+# 💾  EXPORT + MANUAL REFRESH
+# ==========================================
 st.markdown('<div style="padding: 1rem 2rem 2rem; display:flex; gap:12px; flex-wrap:wrap;">', unsafe_allow_html=True)
 col_csv, col_json, col_reload, col_spacer = st.columns([1, 1, 1, 3])
 
@@ -1386,5 +1505,8 @@ with col_reload:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
+# ==========================================
+# ⏱️  AUTO-RERUN (countdown ticker)
+# ==========================================
 time.sleep(1)
 st.rerun()
