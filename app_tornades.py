@@ -131,6 +131,13 @@ html, body, [data-testid="stAppViewContainer"],
     font-family: 'Space Grotesk', sans-serif !important;
 }
 
+    header[data-testid="stHeader"]  { display: none !important; }
+[data-testid="stToolbar"]       { display: none !important; }
+[data-testid="stDecoration"]    { display: none !important; }
+[data-testid="stStatusWidget"]  { display: none !important; }
+#MainMenu                        { display: none !important; }
+footer                           { display: none !important; }
+
 .block-container { padding: 0 !important; max-width: 100% !important; }
 [data-testid="stSidebar"] { background: #080D1A !important; border-right: 1px solid #1A2540; }
 
@@ -311,11 +318,11 @@ SEV_COLORS = {
 }
 
 EVENT_COLORS = {
-    "Tornado Emergency":           "#A855F7",  # 🟣 Violet
-    "Tornado Warning":             "#FF3B30",  # 🔴 Rouge vif
-    "Tornado Watch":               "#F59E0B",  # 🟡 Orange
-    "Severe Thunderstorm Warning": "#EAB308",  # 🟡 Jaune
-    "Flash Flood Warning":         "#3B82F6",  # 🔵 Bleu
+    "Tornado Warning":             "#FF3B30",
+    "Tornado Emergency":           "#FF0000",
+    "Tornado Watch":               "#F59E0B",
+    "Severe Thunderstorm Warning": "#F59E0B",
+    "Flash Flood Warning":         "#3B82F6",
 }
 
 # ==========================================
@@ -364,44 +371,6 @@ def format_time_ago(dt):
     hrs = mins // 60
     if hrs < 24:  return f"{hrs}h ago"
     return f"{hrs//24}d ago"
-
-# ==========================================
-# 🗺️  ZONE GEOMETRY (comtés sans polygone)
-# ==========================================
-@st.cache_data(ttl=86400)  # cache 24h — les frontières de comtés ne changent pas
-def fetch_zone_geometry(zone_url):
-    """Récupère le polygone d'un comté/zone NWS depuis son URL."""
-    try:
-        r = requests.get(zone_url, timeout=8,
-                         headers={"User-Agent": "VORTEX-SWI/2.0"})
-        r.raise_for_status()
-        data = r.json()
-        geom = data.get("geometry")
-        if geom:
-            return geom
-    except Exception:
-        pass
-    return None
-
-def get_alert_geometries(feature):
-    """
-    Retourne la liste de géométries pour une alerte.
-    Si la feature a un polygone direct → le retourne.
-    Sinon → récupère les géométries des zones affectées (comtés).
-    """
-    geom = feature.get("geometry")
-    if geom and geom.get("type") == "Polygon":
-        return [geom]
-
-    # Pas de polygone direct → on cherche les zones affectées
-    props       = feature["properties"]
-    zone_urls   = props.get("affectedZones", [])
-    geometries  = []
-    for url in zone_urls[:8]:  # max 8 zones pour éviter trop de requêtes
-        g = fetch_zone_geometry(url)
-        if g:
-            geometries.append(g)
-    return geometries
 
 # ==========================================
 # 📍  SPC TORNADO REPORTS (trajectoires confirmées)
@@ -611,77 +580,42 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         event = props.get("event", "")
         if event not in show_events:
             continue
+        geom        = f.get("geometry")
         sev         = props.get("severity", "Unknown")
         area        = props.get("areaDesc", "Unknown zone")
         headline    = props.get("headline", event)
         instruction = props.get("instruction", "") or ""
         color       = EVENT_COLORS.get(event, "#6B7280")
 
-        # Vérifie si polygone direct disponible
-        has_direct_polygon = (
-            f.get("geometry") and
-            f["geometry"].get("type") == "Polygon"
-        )
-
-        # Récupère toutes les géométries
-        geometries = get_alert_geometries(f)
-        if not geometries:
-            continue
-
-        # Style selon type de géométrie
-        if has_direct_polygon:
-            # Polygone précis NWS → rempli, bien visible
-            fill_opacity = 0.22
-            weight       = 2
-            dash         = None
-            label_suffix = ""
-        else:
-            # Contour de comté → bordure uniquement, très transparent
-            fill_opacity = 0.06
-            weight       = 1.5
-            dash         = "6 4"
-            label_suffix = " (zone comté)"
-
-        popup_html = f"""
-        <div style="font-family:'Space Grotesk',sans-serif;background:#080D1A;color:#E2E8F0;
-                    border-radius:10px;padding:14px;min-width:240px;max-width:300px;">
-          <div style="font-size:10px;font-family:monospace;color:{color};letter-spacing:.1em;
-                      text-transform:uppercase;margin-bottom:6px;">{event}</div>
-          <div style="font-size:14px;font-weight:600;margin-bottom:8px;">{area[:60]}</div>
-          <div style="font-size:11px;color:#94A3B8;margin-bottom:8px;">{headline[:120]}</div>
-          <div style="font-size:11px;border-left:2px solid {color};padding-left:8px;
-                      color:#CBD5E1;line-height:1.5;">
-            {(instruction[:200]+'…') if len(instruction) > 200 else instruction or 'No specific instructions.'}
-          </div>
-          <div style="margin-top:10px;font-size:10px;font-family:monospace;color:#374151;
-                      display:flex;align-items:center;gap:6px;">
-            {'<span style="color:#22C55E;">◉ Polygone précis</span>' if has_direct_polygon else '<span style="color:#F59E0B;">◎ Zone comté approximative</span>'}
-            &nbsp;·&nbsp; {sev}
-          </div>
-        </div>"""
-
-        for geom in geometries:
-            if geom.get("type") == "Polygon":
-                poly_list = [geom["coordinates"]]
-            elif geom.get("type") == "MultiPolygon":
-                poly_list = geom["coordinates"]
-            else:
-                continue
-
-            for poly_coords in poly_list:
-                coords = [[p[1], p[0]] for p in poly_coords[0]]
-                folium.Polygon(
-                    locations=coords,
-                    color=color,
-                    weight=weight,
-                    fill=True,
-                    fill_color=color,
-                    fill_opacity=fill_opacity,
-                    dash_array=dash,
-                    popup=folium.Popup(popup_html, max_width=320),
-                    tooltip=f"⚠ {event}{label_suffix} — {area[:45]}",
-                ).add_to(m)
-                count += 1
+        if geom and geom.get("type") == "Polygon":
+            coords = [[p[1], p[0]] for p in geom["coordinates"][0]]
+            popup_html = f"""
+            <div style="font-family:'Space Grotesk',sans-serif;background:#080D1A;color:#E2E8F0;
+                        border-radius:10px;padding:14px;min-width:240px;max-width:300px;
+                        border:1px solid {color}40;">
+              <div style="font-size:10px;font-family:monospace;color:{color};letter-spacing:.1em;
+                          text-transform:uppercase;margin-bottom:6px;">{event}</div>
+              <div style="font-size:14px;font-weight:600;margin-bottom:8px;">{area[:60]}</div>
+              <div style="font-size:11px;color:#94A3B8;margin-bottom:8px;">{headline[:120]}</div>
+              <div style="font-size:11px;border-left:2px solid {color};padding-left:8px;
+                          color:#CBD5E1;line-height:1.5;">
+                {(instruction[:200]+'…') if len(instruction) > 200 else instruction or 'No specific instructions.'}
+              </div>
+              <div style="margin-top:10px;font-size:10px;font-family:monospace;color:#374151;">
+                Severity: {sev}
+              </div>
+            </div>"""
+            folium.Polygon(
+                locations=coords,
+                color=color,
+                weight=2,
+                fill=True,
+                fill_color=color,
+                fill_opacity=0.18,
+                popup=folium.Popup(popup_html, max_width=320),
+                tooltip=f"⚠ {event} — {area[:50]}",
+            ).add_to(m)
+            count += 1
 
     # ── TRAJECTOIRES (historique des positions) ───────────────────
     for alert_id, history in trajectories.items():
@@ -1094,20 +1028,6 @@ with col_map:
     legend_html = '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">' + "".join(legend_parts) + "</div>"
     st.markdown(legend_html, unsafe_allow_html=True)
 
-    # Légende précision polygones
-    st.markdown("""
-    <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
-      <span style="font-size:10px;font-family:monospace;padding:2px 8px;border-radius:4px;
-                   background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);color:#22C55E;">
-        ◉ Zone remplie = polygone précis NWS
-      </span>
-      <span style="font-size:10px;font-family:monospace;padding:2px 8px;border-radius:4px;
-                   background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);color:#F59E0B;">
-        ◎ Contour pointillé = zone comté approximative
-      </span>
-    </div>
-    """, unsafe_allow_html=True)
-
     # Légende des éléments live
     n_live = len(tornado_positions)
     n_spc  = sum(len(g) for g in spc_groups)
@@ -1193,8 +1113,8 @@ with col_list:
         * { box-sizing:border-box; margin:0; padding:0; }
         body { background:transparent; font-family:'Space Grotesk',sans-serif; padding:4px 2px; }
 
-        @keyframes glow-extreme { 0%,100%{box-shadow:0 0 5px rgba(255,59,48,0.4);}  50%{box-shadow:0 0 14px rgba(255,59,48,0.8);} }
-        @keyframes glow-severe  { 0%,100%{box-shadow:0 0 3px rgba(245,158,11,0.3);} 50%{box-shadow:0 0 10px rgba(245,158,11,0.6);} }
+        @keyframes glow-red    { 0%,100%{box-shadow:0 0 5px rgba(255,59,48,0.4);}  50%{box-shadow:0 0 14px rgba(255,59,48,0.8);} }
+        @keyframes glow-orange { 0%,100%{box-shadow:0 0 3px rgba(245,158,11,0.3);} 50%{box-shadow:0 0 10px rgba(245,158,11,0.6);} }
         @keyframes pulse-dot   { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
 
         .card {
@@ -1205,8 +1125,8 @@ with col_list:
             transition:all 0.2s ease;
             cursor:pointer;
         }
-        .card.extreme { border-color:rgba(255,59,48,0.4); animation:glow-extreme 2.5s infinite; }
-        .card.severe  { border-color:rgba(245,158,11,0.35); animation:glow-severe 3s infinite; }
+        .card.extreme { border-color:rgba(255,59,48,0.4); background:rgba(255,59,48,0.05); animation:glow-red 2.5s infinite; }
+        .card.severe  { border-color:rgba(245,158,11,0.35); background:rgba(245,158,11,0.04); animation:glow-orange 3s infinite; }
         .card.moderate{ border-color:rgba(59,130,246,0.3); background:rgba(59,130,246,0.04); }
         .card.unknown { border-color:rgba(55,65,81,0.3); background:rgba(55,65,81,0.04); }
 
@@ -1286,24 +1206,24 @@ with col_list:
             area        = html_mod.escape(area_raw)
             certainty   = html_mod.escape(certainty_r)
             instruction = html_mod.escape(instr_raw)
-            # Couleur basée sur le TYPE d'événement (cohérent avec la carte)
             color       = EVENT_COLORS.get(event_raw, "#6B7280")
 
-            # Style de carte basé sur sévérité (glow) + couleur sur event type
             if sev == "Extreme":
-                anim_class = "extreme"
+                card_class="extreme"; bar_color="#FF3B30"
+                badge_bg="rgba(255,59,48,0.2)"; badge_color="#FF6B6B"
+                tag_bg="rgba(255,59,48,0.12)"; tag_border="rgba(255,59,48,0.4)"; tag_color="#FF6B6B"
             elif sev == "Severe":
-                anim_class = "severe"
+                card_class="severe"; bar_color="#F59E0B"
+                badge_bg="rgba(245,158,11,0.2)"; badge_color="#FBB040"
+                tag_bg="rgba(245,158,11,0.12)"; tag_border="rgba(245,158,11,0.4)"; tag_color="#FBB040"
+            elif sev == "Moderate":
+                card_class="moderate"; bar_color="#3B82F6"
+                badge_bg="rgba(59,130,246,0.2)"; badge_color="#60A5FA"
+                tag_bg="rgba(59,130,246,0.12)"; tag_border="rgba(59,130,246,0.4)"; tag_color="#60A5FA"
             else:
-                anim_class = ""
-
-            # Couleurs dérivées de la couleur d'événement
-            bar_color   = color
-            badge_bg    = f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.18)"
-            badge_color = color
-            tag_bg      = f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.10)"
-            tag_border  = f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.35)"
-            tag_color   = color
+                card_class="unknown"; bar_color="#374151"
+                badge_bg="rgba(55,65,81,0.2)"; badge_color="#94A3B8"
+                tag_bg="rgba(55,65,81,0.12)"; tag_border="rgba(55,65,81,0.4)"; tag_color="#94A3B8"
 
             if expires_dt:
                 now_t     = datetime.now(timezone.utc)
@@ -1323,7 +1243,7 @@ with col_list:
             area_short  = area[:55] + ("…" if len(area) > 55 else "")
 
             cards_html += f"""
-            <div class="card {anim_class}" onclick="toggle({i})" style="background:rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.05);border:1px solid rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.35);border-left:4px solid {color};">
+            <div class="card {card_class}" onclick="toggle({i})">
               <div class="card-header">
                 <div class="left-bar" style="background:{bar_color};"></div>
                 <div class="header-main">
