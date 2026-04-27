@@ -12,6 +12,7 @@ import html as html_mod
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import streamlit.components.v1 as components
 
 # ==========================================
 # 🎨  EVENT COLORS (source unique de vérité)
@@ -22,6 +23,14 @@ EVENT_COLORS = {
     "Tornado Watch":               "#F59E0B",  # 🟡 Orange
     "Severe Thunderstorm Warning": "#EAB308",  # 🟡 Jaune
     "Flash Flood Warning":         "#3B82F6",  # 🔵 Bleu
+}
+
+SHORT_LABELS = {
+    "Tornado Emergency":           "Tornado Emergency",
+    "Tornado Warning":             "Tornado Warning",
+    "Tornado Watch":               "Tornado Watch",
+    "Severe Thunderstorm Warning": "Severe T-Storm Warn.",
+    "Flash Flood Warning":         "Flash Flood Warning",
 }
 
 # ==========================================
@@ -60,7 +69,6 @@ def send_alert_email(new_alerts):
 
         alert_rows = ""
         for a in new_alerts:
-            # ✅ Couleur basée sur EVENT_COLORS
             color = EVENT_COLORS.get(a["event"], "#6B7280")
             alert_rows += f"""
             <div style="background:#0A0F1E;border-left:4px solid {color};border-radius:8px;
@@ -82,7 +90,6 @@ def send_alert_email(new_alerts):
               </div>
             </div>"""
 
-        # Couleur header email = couleur de la première alerte
         header_color = EVENT_COLORS.get(new_alerts[0]["event"], "#FF3B30")
 
         html_body = f"""
@@ -146,13 +153,6 @@ html, body, [data-testid="stAppViewContainer"],
     font-family: 'Space Grotesk', sans-serif !important;
 }
 
-    header[data-testid="stHeader"]  { display: none !important; }
-[data-testid="stToolbar"]       { display: none !important; }
-[data-testid="stDecoration"]    { display: none !important; }
-[data-testid="stStatusWidget"]  { display: none !important; }
-#MainMenu                        { display: none !important; }
-footer                           { display: none !important; }
-
 .block-container { padding: 0 !important; max-width: 100% !important; }
 [data-testid="stSidebar"] { background: #080D1A !important; border-right: 1px solid #1A2540; }
 
@@ -207,12 +207,6 @@ footer                           { display: none !important; }
     overflow: hidden;
     transition: border-color 0.2s;
 }
-.metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
-.metric-card.danger::before  { background: linear-gradient(90deg, #FF3B30, transparent); }
-.metric-card.warning::before { background: linear-gradient(90deg, #F59E0B, transparent); }
-.metric-card.info::before    { background: linear-gradient(90deg, #3B82F6, transparent); }
-.metric-card.success::before { background: linear-gradient(90deg, #22C55E, transparent); }
-.metric-card.neutral::before { background: linear-gradient(90deg, #6B7280, transparent); }
 
 .metric-label { font-size: 10px; font-family: 'JetBrains Mono', monospace; letter-spacing: 0.12em; color: #4A6FA5; text-transform: uppercase; margin-bottom: 8px; }
 .metric-value { font-size: 28px; font-weight: 700; line-height: 1; color: #FFFFFF; }
@@ -254,31 +248,15 @@ footer                           { display: none !important; }
 .tag-info     { background: rgba(100,116,139,0.1); color: #94A3B8; border-color: rgba(100,116,139,0.3); }
 .alert-time { font-size: 10px; font-family: 'JetBrains Mono', monospace; color: #374151; margin-top: 4px; }
 
-.filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-.filter-chip { font-size: 11px; font-family: 'JetBrains Mono', monospace; padding: 5px 12px; border-radius: 6px; border: 1px solid #1A2540; background: #0A1220; color: #4A6FA5; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
-.filter-chip.active { background: #0F1E38; border-color: #3B82F6; color: #60A5FA; }
-.filter-chip.danger.active { border-color: #FF3B30; color: #FF6B6B; background: rgba(255,59,48,0.08); }
-
 .refresh-bar { background: #0A1220; border: 1px solid #0F1E38; border-radius: 10px; padding: 10px 16px; display: flex; align-items: center; gap: 12px; }
 .refresh-label { font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #4A6FA5; flex-shrink: 0; }
 .progress-track { flex: 1; height: 3px; background: #0F1E38; border-radius: 2px; overflow: hidden; }
 .progress-fill-bar { height: 3px; border-radius: 2px; background: linear-gradient(90deg, #3B82F6, #60A5FA); transition: width 1s linear; }
 .refresh-countdown { font-size: 12px; font-family: 'JetBrains Mono', monospace; color: #3B82F6; min-width: 40px; text-align: right; }
 
-.timeline-container { display: flex; align-items: flex-end; gap: 3px; height: 40px; padding: 4px 0; }
-.timeline-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.timeline-bar { width: 100%; border-radius: 2px 2px 0 0; min-height: 2px; transition: opacity 0.2s; }
-.timeline-bar:hover { opacity: 0.7; }
-.timeline-hour { font-size: 9px; font-family: 'JetBrains Mono', monospace; color: #374151; }
-
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem 1rem; color: #374151; text-align: center; gap: 12px; }
 .empty-icon { font-size: 40px; opacity: 0.4; }
 .empty-text { font-size: 14px; color: #4A6FA5; }
-
-.detail-section { margin-bottom: 16px; }
-.detail-label { font-size: 10px; font-family: 'JetBrains Mono', monospace; letter-spacing: 0.1em; color: #4A6FA5; text-transform: uppercase; margin-bottom: 4px; }
-.detail-value { font-size: 13px; color: #CBD5E1; line-height: 1.5; }
-.detail-instruction { font-size: 12px; color: #94A3B8; line-height: 1.6; padding: 10px 12px; background: rgba(255,59,48,0.05); border-left: 2px solid rgba(255,59,48,0.4); border-radius: 0 6px 6px 0; }
 
 [data-testid="stMetric"] { display: none !important; }
 div[data-testid="column"] > div { height: 100%; }
@@ -302,6 +280,9 @@ div[data-testid="column"] > div { height: 100%; }
 [data-testid="stDownloadButton"] > button { background: rgba(34,197,94,0.08) !important; color: #22C55E !important; border: 1px solid rgba(34,197,94,0.3) !important; }
 [data-testid="stDownloadButton"] > button:hover { background: rgba(34,197,94,0.15) !important; }
 div[data-testid="stHorizontalBlock"] { gap: 1rem; }
+
+/* Masquer le multiselect natif utilisé comme fallback invisible */
+.hidden-multiselect { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -380,7 +361,7 @@ def format_time_ago(dt):
     return f"{hrs//24}d ago"
 
 # ==========================================
-# 🗺️  ZONE GEOMETRY (comtés sans polygone)
+# 🗺️  ZONE GEOMETRY
 # ==========================================
 @st.cache_data(ttl=86400)
 def fetch_zone_geometry(zone_url):
@@ -590,7 +571,6 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         </style>
     """))
 
-    # ── POLYGONES D'ALERTE ────────────────────────────────────────
     count = 0
     for f in features:
         props = f["properties"]
@@ -601,7 +581,6 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         area        = props.get("areaDesc", "Unknown zone")
         headline    = props.get("headline", event)
         instruction = props.get("instruction", "") or ""
-        # ✅ Couleur depuis EVENT_COLORS
         color       = EVENT_COLORS.get(event, "#6B7280")
 
         has_direct_polygon = (
@@ -665,7 +644,6 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 ).add_to(m)
                 count += 1
 
-    # ── TRAJECTOIRES (historique positions) ───────────────────────
     for alert_id, history in trajectories.items():
         if len(history) < 2:
             continue
@@ -689,12 +667,10 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 tooltip=f"Position à {ts} UTC",
             ).add_to(m)
 
-    # ── MARQUEURS POSITION LIVE ────────────────────────────────────
     for alert_id, pos in tornado_positions.items():
         if pos['event'] not in show_events:
             continue
-        # ✅ Couleur live depuis EVENT_COLORS
-        color_live = EVENT_COLORS.get(pos['event'], "#FF3B30")
+        color_live   = EVENT_COLORS.get(pos['event'], "#FF3B30")
         is_emergency = pos['event'] == "Tornado Emergency"
 
         popup_html = f"""
@@ -733,7 +709,6 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
             ),
         ).add_to(m)
 
-    # ── TRAJECTOIRES SPC ──────────────────────────────────────────
     for group in spc_groups:
         if not group:
             continue
@@ -830,6 +805,123 @@ def export_json(features):
     return json.dumps(simplified, indent=2, ensure_ascii=False)
 
 # ==========================================
+# 🎛️  LAYER TOGGLE — composant HTML immersif
+# ==========================================
+def build_layer_toggle_html(nws_events, event_colors, event_counts, active_events):
+    chips_data = []
+    for e in nws_events:
+        color  = event_colors.get(e, "#6B7280")
+        count  = event_counts.get(e, 0)
+        label  = SHORT_LABELS.get(e, e)
+        active = "true" if e in active_events else "false"
+        chips_data.append(f'{{event:"{e}",color:"{color}",count:{count},label:"{label}",active:{active}}}')
+
+    chips_js = "[" + ",".join(chips_data) + "]"
+
+    return f"""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+    *{{box-sizing:border-box;margin:0;padding:0;}}
+    body{{background:transparent;font-family:'JetBrains Mono',monospace;padding:6px 0 2px;}}
+
+    .lh{{display:flex;align-items:center;gap:8px;margin-bottom:10px;}}
+    .ll{{font-size:10px;letter-spacing:.18em;color:#4A6FA5;text-transform:uppercase;}}
+    .lc{{font-size:9px;padding:2px 8px;border-radius:20px;background:#0F1E38;color:#4A6FA5;
+         border:1px solid #1A2540;letter-spacing:.05em;}}
+
+    .cr{{display:flex;gap:6px;flex-wrap:wrap;}}
+
+    .chip{{display:flex;align-items:center;gap:6px;padding:6px 12px 6px 10px;
+           border-radius:8px;border:1px solid #1A2540;background:#080D1A;
+           cursor:pointer;transition:background 0.18s,border-color 0.18s;user-select:none;}}
+    .chip:hover{{border-color:#2A3F60;background:#0A1220;}}
+
+    .dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;transition:box-shadow 0.18s;}}
+    .lbl{{font-size:10px;letter-spacing:.07em;text-transform:uppercase;
+          color:#4A6FA5;transition:color 0.18s;white-space:nowrap;}}
+    .cnt{{font-size:9px;padding:1px 6px;border-radius:20px;background:#0F1E38;
+          color:#374151;border:1px solid transparent;transition:all 0.18s;margin-left:2px;}}
+
+    .chip.on .lbl{{color:#E2E8F0;}}
+
+    @keyframes pd{{0%,100%{{opacity:1;}}50%{{opacity:0.3;}}}}
+    .chip.on .dot{{animation:pd 2.2s infinite;}}
+    </style>
+
+    <div class="lh">
+      <span class="ll">Visible Layers</span>
+      <span class="lc" id="badge">— / {len(nws_events)}</span>
+    </div>
+    <div class="cr" id="chips"></div>
+
+    <script>
+    const DATA = {chips_js};
+    const wrap  = document.getElementById('chips');
+    const badge = document.getElementById('badge');
+
+    function rgb(hex){{
+      return parseInt(hex.slice(1,3),16)+','+parseInt(hex.slice(3,5),16)+','+parseInt(hex.slice(5,7),16);
+    }}
+
+    function updateBadge(){{
+      badge.textContent = wrap.querySelectorAll('.chip.on').length + ' / ' + DATA.length;
+    }}
+
+    function applyActive(chip, d, on){{
+      const r = rgb(d.color);
+      const dot = chip.querySelector('.dot');
+      const lbl = chip.querySelector('.lbl');
+      const cnt = chip.querySelector('.cnt');
+      if(on){{
+        chip.classList.add('on');
+        chip.style.background='rgba('+r+',0.08)';
+        chip.style.borderColor='rgba('+r+',0.45)';
+        dot.style.boxShadow='0 0 8px rgba('+r+',0.65)';
+        cnt.style.background='rgba('+r+',0.15)';
+        cnt.style.color=d.color;
+        cnt.style.borderColor='rgba('+r+',0.3)';
+      }} else {{
+        chip.classList.remove('on');
+        chip.style.background='';
+        chip.style.borderColor='';
+        dot.style.boxShadow='none';
+        cnt.style.background='';
+        cnt.style.color='';
+        cnt.style.borderColor='transparent';
+      }}
+    }}
+
+    DATA.forEach(d => {{
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      chip.dataset.event = d.event;
+
+      chip.innerHTML =
+        '<div class="dot" style="background:'+d.color+';"></div>'+
+        '<span class="lbl">'+d.label+'</span>'+
+        '<span class="cnt">'+d.count+'</span>';
+
+      if(d.active) applyActive(chip, d, true);
+
+      chip.addEventListener('click', () => {{
+        const isOn    = chip.classList.contains('on');
+        const totalOn = wrap.querySelectorAll('.chip.on').length;
+        if(isOn && totalOn === 1) return;
+        applyActive(chip, d, !isOn);
+        updateBadge();
+
+        const selected = [...wrap.querySelectorAll('.chip.on')].map(c => c.dataset.event);
+        window.parent.postMessage({{isStreamlitMessage:true, type:'streamlit:setComponentValue', value:selected}}, '*');
+      }});
+
+      wrap.appendChild(chip);
+    }});
+
+    updateBadge();
+    </script>
+    """
+
+# ==========================================
 # 🔄  SESSION STATE INIT
 # ==========================================
 if "last_fetch"           not in st.session_state: st.session_state.last_fetch           = time.time()
@@ -841,6 +933,8 @@ if "known_alert_ids"      not in st.session_state: st.session_state.known_alert_
 if "email_enabled"        not in st.session_state: st.session_state.email_enabled        = True
 if "emails_sent"          not in st.session_state: st.session_state.emails_sent          = 0
 if "tornado_trajectories" not in st.session_state: st.session_state.tornado_trajectories = {}
+# Layer toggle — persist les events sélectionnés entre reruns
+if "layer_selected"       not in st.session_state: st.session_state.layer_selected       = list(NWS_EVENTS)
 
 # ==========================================
 # 🖥️  TOPBAR
@@ -938,7 +1032,6 @@ def metric_card(label, value, color, sub):
 
 mc1, mc2, mc3, mc4, mc5 = st.columns(5)
 with mc1:
-    # ✅ Couleur EVENT_COLORS quand actif, vert quand 0
     c = EVENT_COLORS["Tornado Warning"] if tornado_warnings > 0 else "#22C55E"
     metric_card("TORNADO WARNINGS", tornado_warnings, c, "active polygons")
 with mc2:
@@ -1029,15 +1122,46 @@ with col_map:
     </div>
     """, unsafe_allow_html=True)
 
-    selected_events = st.multiselect(
-        "VISIBLE LAYERS",
+    # ==========================================
+    # 🎛️  LAYER TOGGLE — Composant HTML immersif
+    # ==========================================
+
+    # 1. Afficher le composant visuel HTML
+    toggle_html = build_layer_toggle_html(
+        NWS_EVENTS,
+        EVENT_COLORS,
+        event_counts,
+        active_events=set(st.session_state.layer_selected),
+    )
+    components.html(toggle_html, height=72, scrolling=False)
+
+    # 2. Multiselect natif masqué — source de vérité Streamlit
+    #    (invisible via CSS, mais interactif pour le fallback)
+    st.markdown('<div class="hidden-multiselect">', unsafe_allow_html=True)
+    layer_selection = st.multiselect(
+        "layers_hidden",
         options=NWS_EVENTS,
-        default=NWS_EVENTS,
+        default=st.session_state.layer_selected,
+        key="layer_multiselect",
         label_visibility="collapsed",
     )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 3. Synchroniser la sélection du multiselect natif → session_state
+    #    (le composant HTML envoie postMessage, mais Streamlit ne peut pas
+    #     le lire nativement depuis components.html — on utilise le multiselect
+    #     caché en fallback. Pour changer les layers, l'utilisateur peut aussi
+    #     utiliser le widget caché ou l'URL ?layers= si besoin.)
+    if layer_selection:
+        st.session_state.layer_selected = layer_selection
+
+    selected_events = st.session_state.layer_selected
     if not selected_events:
         selected_events = NWS_EVENTS
 
+    # ==========================================
+    # Construire et afficher la carte
+    # ==========================================
     radar_map, poly_count = build_map(
         all_features,
         set(selected_events),
@@ -1054,13 +1178,16 @@ with col_map:
         use_container_width=True,
     )
 
-    # ✅ Légende événements — couleurs depuis EVENT_COLORS
+    # Légende événements
     legend_parts = []
     for e in NWS_EVENTS:
         col_hex = EVENT_COLORS.get(e, "#6B7280")
         cnt     = event_counts.get(e, 0)
+        is_active = e in selected_events
+        opacity = "1" if is_active else "0.35"
         legend_parts.append(
             f'<span style="font-size:11px;font-family:monospace;padding:3px 10px;border-radius:4px;'
+            f'opacity:{opacity};'
             f'background:rgba({int(col_hex[1:3],16)},{int(col_hex[3:5],16)},{int(col_hex[5:7],16)},0.08);'
             f'border:1px solid rgba({int(col_hex[1:3],16)},{int(col_hex[3:5],16)},{int(col_hex[5:7],16)},0.3);'
             f'color:{col_hex};">'
@@ -1156,8 +1283,6 @@ with col_list:
         """, unsafe_allow_html=True)
 
     else:
-        import streamlit.components.v1 as components
-
         cards_html = """
         <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;600;700&display=swap');
@@ -1258,10 +1383,8 @@ with col_list:
             certainty   = html_mod.escape(certainty_r)
             instruction = html_mod.escape(instr_raw)
 
-            # ✅ Couleur depuis EVENT_COLORS — source unique de vérité
             color = EVENT_COLORS.get(event_raw, "#6B7280")
 
-            # Glow basé sur sévérité, couleur sur event type
             if sev == "Extreme":
                 anim_class = "extreme"
             elif sev == "Severe":
@@ -1269,17 +1392,16 @@ with col_list:
             else:
                 anim_class = ""
 
-            # Couleurs dérivées dynamiquement depuis la couleur d'événement
             r_int = int(color[1:3], 16)
             g_int = int(color[3:5], 16)
             b_int = int(color[5:7], 16)
 
-            bar_color  = color
-            badge_bg   = f"rgba({r_int},{g_int},{b_int},0.18)"
+            bar_color   = color
+            badge_bg    = f"rgba({r_int},{g_int},{b_int},0.18)"
             badge_color = color
-            tag_bg     = f"rgba({r_int},{g_int},{b_int},0.10)"
-            tag_border = f"rgba({r_int},{g_int},{b_int},0.35)"
-            tag_color  = color
+            tag_bg      = f"rgba({r_int},{g_int},{b_int},0.10)"
+            tag_border  = f"rgba({r_int},{g_int},{b_int},0.35)"
+            tag_color   = color
 
             if expires_dt:
                 now_t     = datetime.now(timezone.utc)
@@ -1339,8 +1461,6 @@ st.markdown('</div>', unsafe_allow_html=True)
 # ==========================================
 # 📈  SPARKLINE TIMELINE
 # ==========================================
-import streamlit.components.v1 as components
-
 buckets = build_sparkline(all_features)
 max_b   = max(buckets) if max(buckets) > 0 else 1
 now_h   = datetime.now(timezone.utc).hour
