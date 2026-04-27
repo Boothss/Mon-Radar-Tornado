@@ -146,6 +146,13 @@ html, body, [data-testid="stAppViewContainer"],
     font-family: 'Space Grotesk', sans-serif !important;
 }
 
+    header[data-testid="stHeader"]  { display: none !important; }
+[data-testid="stToolbar"]       { display: none !important; }
+[data-testid="stDecoration"]    { display: none !important; }
+[data-testid="stStatusWidget"]  { display: none !important; }
+#MainMenu                        { display: none !important; }
+footer                           { display: none !important; }
+
 .block-container { padding: 0 !important; max-width: 100% !important; }
 [data-testid="stSidebar"] { background: #080D1A !important; border-right: 1px solid #1A2540; }
 
@@ -1022,47 +1029,14 @@ with col_map:
     </div>
     """, unsafe_allow_html=True)
 
-    # CSS pour styler les pills avec les couleurs EVENT_COLORS
-pills_css = "<style>"
-for _e in NWS_EVENTS:
-    _c = EVENT_COLORS.get(_e, "#6B7280")
-    _r, _g, _b = int(_c[1:3],16), int(_c[3:5],16), int(_c[5:7],16)
-    pills_css += f"""
-    div[data-testid="stPills"] button[aria-label="{_e} ({event_counts.get(_e,0)})"][aria-pressed="true"] {{
-        background: rgba({_r},{_g},{_b},0.18) !important;
-        border: 1px solid rgba({_r},{_g},{_b},0.6) !important;
-        color: {_c} !important;
-        box-shadow: 0 0 10px rgba({_r},{_g},{_b},0.25) !important;
-    }}
-    div[data-testid="stPills"] button[aria-label="{_e} ({event_counts.get(_e,0)})"][aria-pressed="false"] {{
-        background: rgba(255,255,255,0.02) !important;
-        border: 1px solid #1A2540 !important;
-        color: #374151 !important;
-        box-shadow: none !important;
-    }}
-    """
-pills_css += """
-div[data-testid="stPills"] button {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 11px !important;
-    letter-spacing: .06em !important;
-    border-radius: 8px !important;
-    padding: 5px 12px !important;
-    transition: all .2s !important;
-}
-</style>"""
-st.markdown(pills_css, unsafe_allow_html=True)
-
-selected_events = st.pills(
-    "Layers",
-    options=NWS_EVENTS,
-    default=NWS_EVENTS,
-    selection_mode="multi",
-    label_visibility="collapsed",
-    format_func=lambda e: f"{e} ({event_counts.get(e, 0)})",
-)
-if not selected_events:
-    selected_events = list(NWS_EVENTS)
+    selected_events = st.multiselect(
+        "VISIBLE LAYERS",
+        options=NWS_EVENTS,
+        default=NWS_EVENTS,
+        label_visibility="collapsed",
+    )
+    if not selected_events:
+        selected_events = NWS_EVENTS
 
     radar_map, poly_count = build_map(
         all_features,
