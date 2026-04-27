@@ -1094,7 +1094,7 @@ with col_map:
     toggle_cols = st.columns(len(NWS_EVENTS))
     for idx, event in enumerate(NWS_EVENTS):
         with toggle_cols[idx]:
-            if st.button("t", key=f"layer_{idx}", label_visibility="collapsed"):
+            if st.button("t", key=f"layer_{idx}"):
                 st.session_state.active_layers[event] = not st.session_state.active_layers.get(event, True)
                 st.rerun()
 
