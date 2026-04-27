@@ -267,6 +267,18 @@ div[data-testid="column"] > div { height: 100%; }
     letter-spacing: 0.05em !important; transition: all 0.15s !important; width: 100% !important;
 }
 .stButton > button:hover { background: #0F1E38 !important; border-color: #3B82F6 !important; }
+/* Cache les boutons layer toggle — on garde uniquement le visuel HTML */
+[data-testid="stHorizontalBlock"] .stButton > button {
+    opacity: 0 !important;
+    height: 4px !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    position: absolute !important;
+    width: 100% !important;
+}
 .stSelectbox > div > div, .stMultiSelect > div > div {
     background: #080D1A !important; border: 1px solid #1A2540 !important;
     border-radius: 8px !important; color: #E2E8F0 !important;
@@ -1055,12 +1067,71 @@ with col_map:
     </div>
     """, unsafe_allow_html=True)
 
-    selected_events = st.multiselect(
-        "VISIBLE LAYERS",
-        options=NWS_EVENTS,
-        default=NWS_EVENTS,
-        label_visibility="collapsed",
-    )
+    # ── LAYER TOGGLES — chips colorées ───────────────────────────
+    # Initialisation session state des layers actifs
+    if "active_layers" not in st.session_state:
+        st.session_state.active_layers = {e: True for e in NWS_EVENTS}
+
+    # Noms courts pour les chips
+    EVENT_SHORT = {
+        "Tornado Emergency":           "🟣 T. Emergency",
+        "Tornado Warning":             "🔴 T. Warning",
+        "Tornado Watch":               "🟡 T. Watch",
+        "Severe Thunderstorm Warning": "🟡 Severe T-Storm",
+        "Flash Flood Warning":         "🔵 Flash Flood",
+    }
+
+    # Boutons toggle via colonnes Streamlit
+    chip_cols = st.columns(len(NWS_EVENTS))
+    for idx, event in enumerate(NWS_EVENTS):
+        color     = EVENT_COLORS.get(event, "#6B7280")
+        count_ev  = event_counts.get(event, 0)
+        is_active = st.session_state.active_layers.get(event, True)
+        short     = EVENT_SHORT.get(event, event)
+
+        r = int(color[1:3], 16)
+        g = int(color[3:5], 16)
+        b = int(color[5:7], 16)
+
+        if is_active:
+            btn_style = (
+                f"background:rgba({r},{g},{b},0.18);"
+                f"border:1px solid rgba({r},{g},{b},0.7);"
+                f"color:{color};"
+                f"box-shadow:0 0 8px rgba({r},{g},{b},0.3);"
+            )
+        else:
+            btn_style = (
+                "background:rgba(255,255,255,0.03);"
+                "border:1px solid #1A2540;"
+                "color:#374151;"
+            )
+
+        with chip_cols[idx]:
+            st.markdown(f"""
+            <div style="{btn_style}
+                border-radius:8px;padding:6px 8px;text-align:center;
+                font-family:monospace;font-size:9px;letter-spacing:.05em;
+                line-height:1.4;cursor:pointer;transition:all 0.2s;
+                margin-bottom:4px;">
+              <div style="font-weight:600;">{short}</div>
+              <div style="font-size:11px;font-weight:700;
+                          color:{'#FFFFFF' if is_active else '#374151'};">
+                {count_ev}
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+            # Bouton Streamlit invisible pour le toggle
+            if st.button(
+                "●" if is_active else "○",
+                key=f"layer_{idx}",
+                help=f"{'Masquer' if is_active else 'Afficher'} {event}",
+            ):
+                st.session_state.active_layers[event] = not is_active
+                st.rerun()
+
+    # Récupère les layers actifs
+    selected_events = [e for e, v in st.session_state.active_layers.items() if v]
     if not selected_events:
         selected_events = NWS_EVENTS
 
