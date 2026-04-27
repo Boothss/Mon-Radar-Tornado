@@ -311,11 +311,11 @@ SEV_COLORS = {
 }
 
 EVENT_COLORS = {
-    "Tornado Warning":             "#FF3B30",
-    "Tornado Emergency":           "#FF0000",
-    "Tornado Watch":               "#F59E0B",
-    "Severe Thunderstorm Warning": "#F59E0B",
-    "Flash Flood Warning":         "#3B82F6",
+    "Tornado Emergency":           "#A855F7",  # 🟣 Violet
+    "Tornado Warning":             "#FF3B30",  # 🔴 Rouge vif
+    "Tornado Watch":               "#F59E0B",  # 🟡 Orange
+    "Severe Thunderstorm Warning": "#EAB308",  # 🟡 Jaune
+    "Flash Flood Warning":         "#3B82F6",  # 🔵 Bleu
 }
 
 # ==========================================
@@ -1193,8 +1193,8 @@ with col_list:
         * { box-sizing:border-box; margin:0; padding:0; }
         body { background:transparent; font-family:'Space Grotesk',sans-serif; padding:4px 2px; }
 
-        @keyframes glow-red    { 0%,100%{box-shadow:0 0 5px rgba(255,59,48,0.4);}  50%{box-shadow:0 0 14px rgba(255,59,48,0.8);} }
-        @keyframes glow-orange { 0%,100%{box-shadow:0 0 3px rgba(245,158,11,0.3);} 50%{box-shadow:0 0 10px rgba(245,158,11,0.6);} }
+        @keyframes glow-extreme { 0%,100%{box-shadow:0 0 5px rgba(255,59,48,0.4);}  50%{box-shadow:0 0 14px rgba(255,59,48,0.8);} }
+        @keyframes glow-severe  { 0%,100%{box-shadow:0 0 3px rgba(245,158,11,0.3);} 50%{box-shadow:0 0 10px rgba(245,158,11,0.6);} }
         @keyframes pulse-dot   { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
 
         .card {
@@ -1205,8 +1205,8 @@ with col_list:
             transition:all 0.2s ease;
             cursor:pointer;
         }
-        .card.extreme { border-color:rgba(255,59,48,0.4); background:rgba(255,59,48,0.05); animation:glow-red 2.5s infinite; }
-        .card.severe  { border-color:rgba(245,158,11,0.35); background:rgba(245,158,11,0.04); animation:glow-orange 3s infinite; }
+        .card.extreme { border-color:rgba(255,59,48,0.4); animation:glow-extreme 2.5s infinite; }
+        .card.severe  { border-color:rgba(245,158,11,0.35); animation:glow-severe 3s infinite; }
         .card.moderate{ border-color:rgba(59,130,246,0.3); background:rgba(59,130,246,0.04); }
         .card.unknown { border-color:rgba(55,65,81,0.3); background:rgba(55,65,81,0.04); }
 
@@ -1286,24 +1286,24 @@ with col_list:
             area        = html_mod.escape(area_raw)
             certainty   = html_mod.escape(certainty_r)
             instruction = html_mod.escape(instr_raw)
+            # Couleur basée sur le TYPE d'événement (cohérent avec la carte)
             color       = EVENT_COLORS.get(event_raw, "#6B7280")
 
+            # Style de carte basé sur sévérité (glow) + couleur sur event type
             if sev == "Extreme":
-                card_class="extreme"; bar_color="#FF3B30"
-                badge_bg="rgba(255,59,48,0.2)"; badge_color="#FF6B6B"
-                tag_bg="rgba(255,59,48,0.12)"; tag_border="rgba(255,59,48,0.4)"; tag_color="#FF6B6B"
+                anim_class = "extreme"
             elif sev == "Severe":
-                card_class="severe"; bar_color="#F59E0B"
-                badge_bg="rgba(245,158,11,0.2)"; badge_color="#FBB040"
-                tag_bg="rgba(245,158,11,0.12)"; tag_border="rgba(245,158,11,0.4)"; tag_color="#FBB040"
-            elif sev == "Moderate":
-                card_class="moderate"; bar_color="#3B82F6"
-                badge_bg="rgba(59,130,246,0.2)"; badge_color="#60A5FA"
-                tag_bg="rgba(59,130,246,0.12)"; tag_border="rgba(59,130,246,0.4)"; tag_color="#60A5FA"
+                anim_class = "severe"
             else:
-                card_class="unknown"; bar_color="#374151"
-                badge_bg="rgba(55,65,81,0.2)"; badge_color="#94A3B8"
-                tag_bg="rgba(55,65,81,0.12)"; tag_border="rgba(55,65,81,0.4)"; tag_color="#94A3B8"
+                anim_class = ""
+
+            # Couleurs dérivées de la couleur d'événement
+            bar_color   = color
+            badge_bg    = f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.18)"
+            badge_color = color
+            tag_bg      = f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.10)"
+            tag_border  = f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.35)"
+            tag_color   = color
 
             if expires_dt:
                 now_t     = datetime.now(timezone.utc)
@@ -1323,7 +1323,7 @@ with col_list:
             area_short  = area[:55] + ("…" if len(area) > 55 else "")
 
             cards_html += f"""
-            <div class="card {card_class}" onclick="toggle({i})">
+            <div class="card {anim_class}" onclick="toggle({i})" style="background:rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.05);border:1px solid rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.35);border-left:4px solid {color};">
               <div class="card-header">
                 <div class="left-bar" style="background:{bar_color};"></div>
                 <div class="header-main">
