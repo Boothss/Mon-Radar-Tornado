@@ -14,6 +14,17 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 # ==========================================
+# 🎨  EVENT COLORS (source unique de vérité)
+# ==========================================
+EVENT_COLORS = {
+    "Tornado Emergency":           "#A855F7",  # 🟣 Violet
+    "Tornado Warning":             "#FF3B30",  # 🔴 Rouge vif
+    "Tornado Watch":               "#F59E0B",  # 🟡 Orange
+    "Severe Thunderstorm Warning": "#EAB308",  # 🟡 Jaune
+    "Flash Flood Warning":         "#3B82F6",  # 🔵 Bleu
+}
+
+# ==========================================
 # 📧  EMAIL CONFIG
 # ==========================================
 EMAIL_SENDER   = "alexbailly82@gmail.com"
@@ -49,7 +60,8 @@ def send_alert_email(new_alerts):
 
         alert_rows = ""
         for a in new_alerts:
-            color = "#FF3B30" if a["event"] == "Tornado Emergency" else "#FF6B35"
+            # ✅ Couleur basée sur EVENT_COLORS
+            color = EVENT_COLORS.get(a["event"], "#6B7280")
             alert_rows += f"""
             <div style="background:#0A0F1E;border-left:4px solid {color};border-radius:8px;
                         padding:16px 20px;margin-bottom:16px;font-family:monospace;">
@@ -70,11 +82,14 @@ def send_alert_email(new_alerts):
               </div>
             </div>"""
 
+        # Couleur header email = couleur de la première alerte
+        header_color = EVENT_COLORS.get(new_alerts[0]["event"], "#FF3B30")
+
         html_body = f"""
         <html><body style="background:#050810;margin:0;padding:24px;font-family:'Segoe UI',sans-serif;">
           <div style="max-width:600px;margin:0 auto;">
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
-              <div style="background:linear-gradient(135deg,#FF3B30,#FF6B35);
+              <div style="background:linear-gradient(135deg,{header_color},{header_color}99);
                           border-radius:10px;width:40px;height:40px;display:flex;
                           align-items:center;justify-content:center;font-size:20px;">🌪</div>
               <div>
@@ -82,7 +97,7 @@ def send_alert_email(new_alerts):
                 <div style="color:#4A6FA5;font-size:10px;letter-spacing:.1em;">SEVERE WEATHER INTELLIGENCE</div>
               </div>
             </div>
-            <div style="color:#FF3B30;font-size:13px;font-family:monospace;
+            <div style="color:{header_color};font-size:13px;font-family:monospace;
                         letter-spacing:.1em;margin-bottom:16px;">
               ● {len(new_alerts)} NOUVELLE(S) ALERTE(S) DÉTECTÉE(S)
             </div>
@@ -310,14 +325,6 @@ SEV_COLORS = {
     "Unknown":  ("#374151", "sev-expired",  "tag-info"),
 }
 
-EVENT_COLORS = {
-    "Tornado Emergency":           "#A855F7",  # 🟣 Violet
-    "Tornado Warning":             "#FF3B30",  # 🔴 Rouge vif
-    "Tornado Watch":               "#F59E0B",  # 🟡 Orange
-    "Severe Thunderstorm Warning": "#EAB308",  # 🟡 Jaune
-    "Flash Flood Warning":         "#3B82F6",  # 🔵 Bleu
-}
-
 # ==========================================
 # 🧠  DATA FETCHING
 # ==========================================
@@ -368,9 +375,8 @@ def format_time_ago(dt):
 # ==========================================
 # 🗺️  ZONE GEOMETRY (comtés sans polygone)
 # ==========================================
-@st.cache_data(ttl=86400)  # cache 24h — les frontières de comtés ne changent pas
+@st.cache_data(ttl=86400)
 def fetch_zone_geometry(zone_url):
-    """Récupère le polygone d'un comté/zone NWS depuis son URL."""
     try:
         r = requests.get(zone_url, timeout=8,
                          headers={"User-Agent": "VORTEX-SWI/2.0"})
@@ -384,33 +390,25 @@ def fetch_zone_geometry(zone_url):
     return None
 
 def get_alert_geometries(feature):
-    """
-    Retourne la liste de géométries pour une alerte.
-    Si la feature a un polygone direct → le retourne.
-    Sinon → récupère les géométries des zones affectées (comtés).
-    """
     geom = feature.get("geometry")
     if geom and geom.get("type") == "Polygon":
         return [geom]
-
-    # Pas de polygone direct → on cherche les zones affectées
-    props       = feature["properties"]
-    zone_urls   = props.get("affectedZones", [])
-    geometries  = []
-    for url in zone_urls[:8]:  # max 8 zones pour éviter trop de requêtes
+    props     = feature["properties"]
+    zone_urls = props.get("affectedZones", [])
+    geometries = []
+    for url in zone_urls[:8]:
         g = fetch_zone_geometry(url)
         if g:
             geometries.append(g)
     return geometries
 
 # ==========================================
-# 📍  SPC TORNADO REPORTS (trajectoires confirmées)
+# 📍  SPC TORNADO REPORTS
 # ==========================================
 SPC_REPORTS_URL = "https://www.spc.noaa.gov/climo/reports/today_filtered.csv"
 
-@st.cache_data(ttl=300)  # refresh toutes les 5 min
+@st.cache_data(ttl=300)
 def fetch_spc_tornado_reports():
-    """Récupère uniquement les tornades confirmées SPC du jour."""
     try:
         r = requests.get(SPC_REPORTS_URL, timeout=10,
                          headers={"User-Agent": "VORTEX-SWI/2.0"})
@@ -436,7 +434,6 @@ def fetch_spc_tornado_reports():
                         lon = float(parts[6].strip())
                         if lat == 0 and lon == 0:
                             continue
-                        # Parse heure pour tri chronologique
                         t_str = parts[0].strip()
                         reports.append({
                             'time':     t_str,
@@ -450,18 +447,12 @@ def fetch_spc_tornado_reports():
                         })
                     except (ValueError, IndexError):
                         pass
-        # Trie par heure pour avoir les trajectoires dans l'ordre
         reports.sort(key=lambda x: x['time'])
         return reports
     except Exception:
         return []
 
 def group_spc_trajectories(reports, max_dist_km=150, max_time_min=60):
-    """
-    Regroupe les rapports SPC proches dans le temps et l'espace
-    pour reconstruire des trajectoires de tornades distinctes.
-    Retourne une liste de groupes (chaque groupe = une tornade).
-    """
     if not reports:
         return []
 
@@ -502,18 +493,12 @@ def group_spc_trajectories(reports, max_dist_km=150, max_time_min=60):
 # ==========================================
 # 🌪️  TORNADO LIVE POSITION & TRAJECTORY
 # ==========================================
-
 def compute_centroid(coords):
-    """Calcule le centroïde d'un polygone GeoJSON → (lat, lon)."""
     lats = [p[1] for p in coords]
     lons = [p[0] for p in coords]
     return sum(lats) / len(lats), sum(lons) / len(lons)
 
 def extract_tornado_positions(features):
-    """
-    Extrait la position approximative (centroïde du polygone)
-    de chaque Tornado Warning / Emergency actif.
-    """
     positions = {}
     for f in features:
         props = f["properties"]
@@ -535,23 +520,18 @@ def extract_tornado_positions(features):
     return positions
 
 def update_trajectories(current_positions):
-    """
-    Ajoute le point courant dans l'historique de chaque tornade.
-    Conserve les 20 dernières positions par alerte.
-    """
     if "tornado_trajectories" not in st.session_state:
         st.session_state.tornado_trajectories = {}
 
     for alert_id, pos in current_positions.items():
         hist = st.session_state.tornado_trajectories.get(alert_id, [])
-        # N'ajoute que si la position a changé (ou premier point)
         if not hist or (hist[-1][0] != pos['lat'] or hist[-1][1] != pos['lon']):
             ts = datetime.now(timezone.utc).strftime("%H:%M")
             hist.append((pos['lat'], pos['lon'], ts))
         st.session_state.tornado_trajectories[alert_id] = hist[-20:]
 
 # ==========================================
-# 🗺️  MAP BUILDER  (avec position live + trajectoire + SPC)
+# 🗺️  MAP BUILDER
 # ==========================================
 def build_map(features, show_events, tornado_positions, trajectories, spc_groups):
     m = folium.Map(
@@ -566,7 +546,6 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         max_zoom=19,
     ).add_to(m)
 
-    # CSS : supprime fond blanc popup + stylise croix + cache attribution
     m.get_root().html.add_child(folium.Element("""
         <style>
         .leaflet-popup-content-wrapper {
@@ -604,7 +583,7 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         </style>
     """))
 
-    # ── POLYGONES D'ALERTE (zones rouges) ────────────────────────
+    # ── POLYGONES D'ALERTE ────────────────────────────────────────
     count = 0
     for f in features:
         props = f["properties"]
@@ -615,28 +594,24 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         area        = props.get("areaDesc", "Unknown zone")
         headline    = props.get("headline", event)
         instruction = props.get("instruction", "") or ""
+        # ✅ Couleur depuis EVENT_COLORS
         color       = EVENT_COLORS.get(event, "#6B7280")
 
-        # Vérifie si polygone direct disponible
         has_direct_polygon = (
             f.get("geometry") and
             f["geometry"].get("type") == "Polygon"
         )
 
-        # Récupère toutes les géométries
         geometries = get_alert_geometries(f)
         if not geometries:
             continue
 
-        # Style selon type de géométrie
         if has_direct_polygon:
-            # Polygone précis NWS → rempli, bien visible
             fill_opacity = 0.22
             weight       = 2
             dash         = None
             label_suffix = ""
         else:
-            # Contour de comté → bordure uniquement, très transparent
             fill_opacity = 0.06
             weight       = 1.5
             dash         = "6 4"
@@ -683,12 +658,11 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 ).add_to(m)
                 count += 1
 
-    # ── TRAJECTOIRES (historique des positions) ───────────────────
+    # ── TRAJECTOIRES (historique positions) ───────────────────────
     for alert_id, history in trajectories.items():
         if len(history) < 2:
             continue
         path = [(lat, lon) for lat, lon, _ in history]
-        # Ligne pointillée blanche
         folium.PolyLine(
             locations=path,
             color="#FFFFFF",
@@ -697,7 +671,6 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
             dash_array="6 4",
             tooltip="Trajectoire de la tornade",
         ).add_to(m)
-        # Points intermédiaires (positions passées)
         for lat, lon, ts in history[:-1]:
             folium.CircleMarker(
                 location=[lat, lon],
@@ -709,12 +682,13 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 tooltip=f"Position à {ts} UTC",
             ).add_to(m)
 
-    # ── MARQUEURS POSITION LIVE (centroïdes des alertes actives) ──
+    # ── MARQUEURS POSITION LIVE ────────────────────────────────────
     for alert_id, pos in tornado_positions.items():
         if pos['event'] not in show_events:
             continue
+        # ✅ Couleur live depuis EVENT_COLORS
+        color_live = EVENT_COLORS.get(pos['event'], "#FF3B30")
         is_emergency = pos['event'] == "Tornado Emergency"
-        color_live   = "#FF0000" if is_emergency else "#FF3B30"
 
         popup_html = f"""
         <div style="font-family:monospace;background:#080D1A;color:#E2E8F0;
@@ -730,7 +704,6 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
           </div>
         </div>"""
 
-        # Cercles concentriques (effet radar pulsant)
         for radius, opacity in [(28, 0.04), (18, 0.08), (10, 0.15)]:
             folium.CircleMarker(
                 location=[pos['lat'], pos['lon']],
@@ -742,24 +715,22 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 fill_opacity=opacity,
             ).add_to(m)
 
-        # Marqueur principal
         folium.Marker(
             location=[pos['lat'], pos['lon']],
             popup=folium.Popup(popup_html, max_width=280),
             tooltip=f"🌪️ LIVE — {pos['event']} · {pos['area'][:40]}",
             icon=folium.Icon(
-                color="red" if is_emergency else "orange",
+                color="purple" if is_emergency else "red",
                 icon="bolt",
                 prefix="fa",
             ),
         ).add_to(m)
 
-    # ── TRAJECTOIRES SPC (tornades confirmées du jour) ───────────
+    # ── TRAJECTOIRES SPC ──────────────────────────────────────────
     for group in spc_groups:
         if not group:
             continue
 
-        # Ligne pointillée rouge reliant les points dans l'ordre chronologique
         if len(group) >= 2:
             path = [(rep['lat'], rep['lon']) for rep in group]
             folium.PolyLine(
@@ -771,10 +742,8 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
                 tooltip="Trajectoire SPC confirmée (~30min délai)",
             ).add_to(m)
 
-        # Points pour chaque observation
         for idx, rep in enumerate(group):
-            is_last = (idx == len(group) - 1)
-            # Dernier point = plus grand (observation la plus récente)
+            is_last    = (idx == len(group) - 1)
             radius     = 10 if is_last else 7
             fill_op    = 0.9 if is_last else 0.7
             f_scale    = rep['f_scale'] or 'NC'
@@ -856,14 +825,14 @@ def export_json(features):
 # ==========================================
 # 🔄  SESSION STATE INIT
 # ==========================================
-if "last_fetch"          not in st.session_state: st.session_state.last_fetch          = time.time()
-if "refresh_interval"    not in st.session_state: st.session_state.refresh_interval    = 60
-if "selected_alert"      not in st.session_state: st.session_state.selected_alert      = None
-if "filter_sev"          not in st.session_state: st.session_state.filter_sev          = "All"
-if "show_events"         not in st.session_state: st.session_state.show_events         = set(NWS_EVENTS)
-if "known_alert_ids"     not in st.session_state: st.session_state.known_alert_ids     = set()
-if "email_enabled"       not in st.session_state: st.session_state.email_enabled       = True
-if "emails_sent"         not in st.session_state: st.session_state.emails_sent         = 0
+if "last_fetch"           not in st.session_state: st.session_state.last_fetch           = time.time()
+if "refresh_interval"     not in st.session_state: st.session_state.refresh_interval     = 60
+if "selected_alert"       not in st.session_state: st.session_state.selected_alert       = None
+if "filter_sev"           not in st.session_state: st.session_state.filter_sev           = "All"
+if "show_events"          not in st.session_state: st.session_state.show_events          = set(NWS_EVENTS)
+if "known_alert_ids"      not in st.session_state: st.session_state.known_alert_ids      = set()
+if "email_enabled"        not in st.session_state: st.session_state.email_enabled        = True
+if "emails_sent"          not in st.session_state: st.session_state.emails_sent          = 0
 if "tornado_trajectories" not in st.session_state: st.session_state.tornado_trajectories = {}
 
 # ==========================================
@@ -892,17 +861,14 @@ st.markdown(f"""
 with st.spinner(""):
     all_features = fetch_all_alerts()
 
-# Tri par sévérité
 all_features.sort(key=lambda f: SEVERITY_ORDER.get(f["properties"].get("severity","Unknown"), 4))
 
-# Positions live des tornades + mise à jour trajectoires
 tornado_positions = extract_tornado_positions(all_features)
 update_trajectories(tornado_positions)
 trajectories = st.session_state.tornado_trajectories
 
-# Rapports SPC tornades du jour + regroupement en trajectoires
-spc_reports  = fetch_spc_tornado_reports()
-spc_groups   = group_spc_trajectories(spc_reports)
+spc_reports = fetch_spc_tornado_reports()
+spc_groups  = group_spc_trajectories(spc_reports)
 
 # ==========================================
 # 📧  DÉTECTION NOUVELLES ALERTES + EMAIL
@@ -965,16 +931,17 @@ def metric_card(label, value, color, sub):
 
 mc1, mc2, mc3, mc4, mc5 = st.columns(5)
 with mc1:
-    c = "#FF3B30" if tornado_warnings > 0 else "#22C55E"
+    # ✅ Couleur EVENT_COLORS quand actif, vert quand 0
+    c = EVENT_COLORS["Tornado Warning"] if tornado_warnings > 0 else "#22C55E"
     metric_card("TORNADO WARNINGS", tornado_warnings, c, "active polygons")
 with mc2:
-    c = "#FF3B30" if tornado_emergencies > 0 else "#4A6FA5"
+    c = EVENT_COLORS["Tornado Emergency"] if tornado_emergencies > 0 else "#4A6FA5"
     metric_card("TORNADO EMERGENCIES", tornado_emergencies, c, "highest severity")
 with mc3:
-    c = "#F59E0B" if tornado_watches > 0 else "#4A6FA5"
+    c = EVENT_COLORS["Tornado Watch"] if tornado_watches > 0 else "#4A6FA5"
     metric_card("TORNADO WATCHES", tornado_watches, c, "counties at risk")
 with mc4:
-    c = "#F59E0B" if tstorm_warnings > 0 else "#4A6FA5"
+    c = EVENT_COLORS["Severe Thunderstorm Warning"] if tstorm_warnings > 0 else "#4A6FA5"
     metric_card("SEVERE T-STORM WARN.", tstorm_warnings, c, "active cells")
 with mc5:
     metric_card("TOTAL ACTIVE ALERTS", total_active, "#3B82F6", "all event types")
@@ -1064,7 +1031,6 @@ with col_map:
     if not selected_events:
         selected_events = NWS_EVENTS
 
-    # Appel build_map avec les nouveaux paramètres
     radar_map, poly_count = build_map(
         all_features,
         set(selected_events),
@@ -1081,15 +1047,17 @@ with col_map:
         use_container_width=True,
     )
 
-    # Légende événements
+    # ✅ Légende événements — couleurs depuis EVENT_COLORS
     legend_parts = []
     for e in NWS_EVENTS:
         col_hex = EVENT_COLORS.get(e, "#6B7280")
-        cnt = event_counts.get(e, 0)
+        cnt     = event_counts.get(e, 0)
         legend_parts.append(
             f'<span style="font-size:11px;font-family:monospace;padding:3px 10px;border-radius:4px;'
-            f'background:rgba(255,255,255,0.03);border:1px solid #1A2540;color:#4A6FA5;">'
-            f'<span style="color:{col_hex};">&#9632;</span> {e} ({cnt})</span>'
+            f'background:rgba({int(col_hex[1:3],16)},{int(col_hex[3:5],16)},{int(col_hex[5:7],16)},0.08);'
+            f'border:1px solid rgba({int(col_hex[1:3],16)},{int(col_hex[3:5],16)},{int(col_hex[5:7],16)},0.3);'
+            f'color:{col_hex};">'
+            f'&#9632; {e} ({cnt})</span>'
         )
     legend_html = '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">' + "".join(legend_parts) + "</div>"
     st.markdown(legend_html, unsafe_allow_html=True)
@@ -1108,7 +1076,7 @@ with col_map:
     </div>
     """, unsafe_allow_html=True)
 
-    # Légende des éléments live
+    # Légende live + SPC
     n_live = len(tornado_positions)
     n_spc  = sum(len(g) for g in spc_groups)
     extras = []
@@ -1133,7 +1101,6 @@ with col_map:
 # ---- RIGHT: ALERT LOG ----
 with col_list:
 
-    # CSS animations pour les cartes
     st.markdown("""
     <style>
     @keyframes glow-red {
@@ -1149,7 +1116,6 @@ with col_list:
     </style>
     """, unsafe_allow_html=True)
 
-    # ── Filtres sévérité ──────────────────────────────────────────
     sev_filter = st.radio(
         "Filter",
         ["All", "Extreme", "Severe", "Moderate"],
@@ -1163,7 +1129,6 @@ with col_list:
 
     n_filtered = len(filtered)
 
-    # ── Header ───────────────────────────────────────────────────
     st.markdown(f"""
     <div style="display:flex;align-items:center;justify-content:space-between;
                 margin-bottom:10px;padding:0 2px;">
@@ -1175,7 +1140,6 @@ with col_list:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Vide ─────────────────────────────────────────────────────
     if not filtered:
         st.markdown("""
         <div style="text-align:center;padding:3rem 1rem;color:#4A6FA5;font-family:monospace;">
@@ -1286,10 +1250,11 @@ with col_list:
             area        = html_mod.escape(area_raw)
             certainty   = html_mod.escape(certainty_r)
             instruction = html_mod.escape(instr_raw)
-            # Couleur basée sur le TYPE d'événement (cohérent avec la carte)
-            color       = EVENT_COLORS.get(event_raw, "#6B7280")
 
-            # Style de carte basé sur sévérité (glow) + couleur sur event type
+            # ✅ Couleur depuis EVENT_COLORS — source unique de vérité
+            color = EVENT_COLORS.get(event_raw, "#6B7280")
+
+            # Glow basé sur sévérité, couleur sur event type
             if sev == "Extreme":
                 anim_class = "extreme"
             elif sev == "Severe":
@@ -1297,13 +1262,17 @@ with col_list:
             else:
                 anim_class = ""
 
-            # Couleurs dérivées de la couleur d'événement
-            bar_color   = color
-            badge_bg    = f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.18)"
+            # Couleurs dérivées dynamiquement depuis la couleur d'événement
+            r_int = int(color[1:3], 16)
+            g_int = int(color[3:5], 16)
+            b_int = int(color[5:7], 16)
+
+            bar_color  = color
+            badge_bg   = f"rgba({r_int},{g_int},{b_int},0.18)"
             badge_color = color
-            tag_bg      = f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.10)"
-            tag_border  = f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.35)"
-            tag_color   = color
+            tag_bg     = f"rgba({r_int},{g_int},{b_int},0.10)"
+            tag_border = f"rgba({r_int},{g_int},{b_int},0.35)"
+            tag_color  = color
 
             if expires_dt:
                 now_t     = datetime.now(timezone.utc)
@@ -1323,7 +1292,7 @@ with col_list:
             area_short  = area[:55] + ("…" if len(area) > 55 else "")
 
             cards_html += f"""
-            <div class="card {anim_class}" onclick="toggle({i})" style="background:rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.05);border:1px solid rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.35);border-left:4px solid {color};">
+            <div class="card {anim_class}" onclick="toggle({i})" style="background:rgba({r_int},{g_int},{b_int},0.05);border:1px solid rgba({r_int},{g_int},{b_int},0.35);border-left:4px solid {color};">
               <div class="card-header">
                 <div class="left-bar" style="background:{bar_color};"></div>
                 <div class="header-main">
