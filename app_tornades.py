@@ -267,18 +267,6 @@ div[data-testid="column"] > div { height: 100%; }
     letter-spacing: 0.05em !important; transition: all 0.15s !important; width: 100% !important;
 }
 .stButton > button:hover { background: #0F1E38 !important; border-color: #3B82F6 !important; }
-/* Cache les boutons layer toggle — déclencheurs invisibles */
-[data-testid="stHorizontalBlock"] .stButton > button {
-    opacity: 0 !important;
-    height: 2px !important;
-    min-height: 0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    border: none !important;
-    background: transparent !important;
-    pointer-events: none !important;
-    position: absolute !important;
-}
 .stSelectbox > div > div, .stMultiSelect > div > div {
     background: #080D1A !important; border: 1px solid #1A2540 !important;
     border-radius: 8px !important; color: #E2E8F0 !important;
@@ -1067,217 +1055,16 @@ with col_map:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── LAYER TOGGLES — overlay compact ──────────────────────────
-    if "active_layers" not in st.session_state:
-        st.session_state.active_layers = {e: True for e in NWS_EVENTS}
-
-    EVENT_SHORT = {
-        "Tornado Emergency":           "Tornado Emergency",
-        "Tornado Warning":             "Tornado Warning",
-        "Tornado Watch":               "Tornado Watch",
-        "Severe Thunderstorm Warning": "Severe T-Storm",
-        "Flash Flood Warning":         "Flash Flood",
-    }
-
-    EVENT_ICONS = {
-        "Tornado Emergency":           "🟣",
-        "Tornado Warning":             "🔴",
-        "Tornado Watch":               "🟡",
-        "Severe Thunderstorm Warning": "🟡",
-        "Flash Flood Warning":         "🔵",
-    }
-
-    # Compte actifs
-    n_active_layers = sum(1 for v in st.session_state.active_layers.values() if v)
-
-    # Boutons toggle cachés (un par event) pour le vrai toggle Streamlit
-    toggle_cols = st.columns(len(NWS_EVENTS))
-    for idx, event in enumerate(NWS_EVENTS):
-        with toggle_cols[idx]:
-            if st.button("t", key=f"layer_{idx}", label_visibility="collapsed"):
-                st.session_state.active_layers[event] = not st.session_state.active_layers.get(event, True)
-                st.rerun()
-
-    # Overlay HTML pur — bouton + panneau flottant
-    overlay_items = ""
-    for event in NWS_EVENTS:
-        color    = EVENT_COLORS.get(event, "#6B7280")
-        count_ev = event_counts.get(event, 0)
-        is_on    = st.session_state.active_layers.get(event, True)
-        short    = EVENT_SHORT.get(event, event)
-        icon     = EVENT_ICONS.get(event, "●")
-        r,g,b    = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
-
-        if is_on:
-            item_style  = f"background:rgba({r},{g},{b},0.12);border:1px solid rgba({r},{g},{b},0.5);color:{color};"
-            check_style = f"background:{color};color:#000;"
-            check       = "✓"
-        else:
-            item_style  = "background:rgba(255,255,255,0.03);border:1px solid #1A2540;color:#374151;"
-            check_style = "background:#1A2540;color:#374151;"
-            check       = "○"
-
-        overlay_items += f"""
-        <div class="layer-item" style="{item_style}" onclick="submitToggle({idx})">
-          <div style="display:flex;align-items:center;gap:10px;flex:1;">
-            <span style="font-size:14px;">{icon}</span>
-            <div>
-              <div style="font-size:11px;font-weight:600;letter-spacing:.05em;">{short}</div>
-              <div style="font-size:10px;opacity:0.6;margin-top:1px;">{count_ev} alerte{'s' if count_ev>1 else ''} active{'s' if count_ev>1 else ''}</div>
-            </div>
-          </div>
-          <div class="check" style="{check_style}">{check}</div>
-        </div>
-        """
-
-    import streamlit.components.v1 as components
-    overlay_html = f"""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
-    * {{ box-sizing:border-box; margin:0; padding:0; }}
-    body {{ background:transparent; font-family:'JetBrains Mono',monospace; }}
-
-    .layers-btn {{
-        display:inline-flex;align-items:center;gap:8px;
-        background:#080D1A;border:1px solid #1A2540;
-        border-radius:8px;padding:7px 14px;cursor:pointer;
-        font-family:'JetBrains Mono',monospace;font-size:11px;
-        color:#94A3B8;letter-spacing:.08em;
-        transition:all 0.2s;user-select:none;
-        box-shadow:0 2px 8px rgba(0,0,0,0.3);
-    }}
-    .layers-btn:hover {{ border-color:#3B82F6;color:#60A5FA; }}
-    .layers-btn .dot {{ width:7px;height:7px;border-radius:50%;background:#22C55E;box-shadow:0 0 6px #22C55E; }}
-    .layers-btn .badge {{
-        background:#FF3B30;color:#fff;font-size:9px;
-        border-radius:10px;padding:1px 5px;font-weight:700;
-        display:{'inline' if n_active_layers < len(NWS_EVENTS) else 'none'};
-    }}
-    .layers-btn .arrow {{ font-size:9px;opacity:0.5;transition:transform 0.2s; }}
-    .layers-btn.open .arrow {{ transform:rotate(180deg); }}
-
-    .overlay {{
-        display:none;position:absolute;top:44px;left:0;
-        background:#080D1A;border:1px solid #1A2540;
-        border-radius:12px;padding:10px;
-        box-shadow:0 8px 32px rgba(0,0,0,0.7);
-        z-index:9999;min-width:260px;
-        backdrop-filter:blur(10px);
-    }}
-    .overlay.open {{ display:block; }}
-    .overlay-header {{
-        font-size:9px;letter-spacing:.15em;color:#374151;
-        text-transform:uppercase;margin-bottom:8px;padding:0 4px;
-    }}
-    .layer-item {{
-        display:flex;align-items:center;justify-content:space-between;
-        border-radius:8px;padding:9px 12px;margin-bottom:5px;
-        cursor:pointer;transition:all 0.15s;
-        font-family:'JetBrains Mono',monospace;
-    }}
-    .layer-item:last-child {{ margin-bottom:0; }}
-    .layer-item:hover {{ filter:brightness(1.15); }}
-    .check {{
-        width:20px;height:20px;border-radius:50%;
-        display:flex;align-items:center;justify-content:center;
-        font-size:10px;font-weight:700;flex-shrink:0;
-        transition:all 0.15s;
-    }}
-    .overlay-footer {{
-        margin-top:8px;padding-top:8px;
-        border-top:1px solid #0F1E38;
-        display:flex;gap:6px;
-    }}
-    .footer-btn {{
-        flex:1;text-align:center;font-size:9px;
-        letter-spacing:.08em;color:#4A6FA5;
-        padding:5px;border-radius:5px;cursor:pointer;
-        background:rgba(255,255,255,0.03);border:1px solid #1A2540;
-        transition:all 0.15s;
-    }}
-    .footer-btn:hover {{ color:#E2E8F0;background:#0F1E38; }}
-    .wrapper {{ position:relative;display:inline-block; }}
-    </style>
-
-    <div class="wrapper">
-      <div class="layers-btn" id="layersBtn" onclick="toggleOverlay()">
-        <span class="dot"></span>
-        LAYERS
-        <span class="badge" id="hiddenBadge">{len(NWS_EVENTS) - n_active_layers} masqué{'s' if len(NWS_EVENTS)-n_active_layers>1 else ''}</span>
-        <span class="arrow">▼</span>
-      </div>
-
-      <div class="overlay" id="layersOverlay">
-        <div class="overlay-header">CALQUES VISIBLES SUR LA CARTE</div>
-        {overlay_items}
-        <div class="overlay-footer">
-          <div class="footer-btn" onclick="allOn()">TOUT ACTIVER</div>
-          <div class="footer-btn" onclick="allOff()">TOUT MASQUER</div>
-        </div>
-      </div>
-    </div>
-
-    <script>
-    // Boutons Streamlit cachés pour déclencher le toggle
-    function getBtn(idx) {{
-        var btns = window.parent.document.querySelectorAll('[data-testid="stButton"] button');
-        // Cherche les boutons layer par leur key
-        return btns[idx] || null;
-    }}
-
-    function submitToggle(idx) {{
-        // Remonte au parent Streamlit et clique le bon bouton
-        var allBtns = window.parent.document.querySelectorAll('[data-testid="stButton"] button');
-        if (allBtns[idx]) {{ allBtns[idx].click(); }}
-    }}
-
-    function allOn() {{
-        // Active tous les layers désactivés
-        var allBtns = window.parent.document.querySelectorAll('[data-testid="stButton"] button');
-        var items = document.querySelectorAll('.layer-item');
-        items.forEach(function(item, i) {{
-            var isOff = item.querySelector('.check').style.background.includes('1A2540') ||
-                        item.querySelector('.check').textContent === '○';
-            if (isOff && allBtns[i]) allBtns[i].click();
-        }});
-    }}
-
-    function allOff() {{
-        var allBtns = window.parent.document.querySelectorAll('[data-testid="stButton"] button');
-        var items = document.querySelectorAll('.layer-item');
-        items.forEach(function(item, i) {{
-            var isOn = item.querySelector('.check').textContent === '✓';
-            if (isOn && allBtns[i]) allBtns[i].click();
-        }});
-    }}
-
-    function toggleOverlay() {{
-        var btn     = document.getElementById('layersBtn');
-        var overlay = document.getElementById('layersOverlay');
-        btn.classList.toggle('open');
-        overlay.classList.toggle('open');
-    }}
-
-    // Ferme l'overlay si on clique ailleurs
-    window.parent.document.addEventListener('click', function(e) {{
-        var overlay = document.getElementById('layersOverlay');
-        var btn     = document.getElementById('layersBtn');
-        if (overlay && !overlay.contains(e.target) && !btn.contains(e.target)) {{
-            overlay.classList.remove('open');
-            btn.classList.remove('open');
-        }}
-    }});
-    </script>
-    """
-
-    components.html(overlay_html, height=52, scrolling=False)
-
-    # Récupère les layers actifs
-    selected_events = [e for e, v in st.session_state.active_layers.items() if v]
+    selected_events = st.multiselect(
+        "VISIBLE LAYERS",
+        options=NWS_EVENTS,
+        default=NWS_EVENTS,
+        label_visibility="collapsed",
+    )
     if not selected_events:
-        selected_events = list(NWS_EVENTS)
+        selected_events = NWS_EVENTS
 
-    # Appel build_map
+    # Appel build_map avec les nouveaux paramètres
     radar_map, poly_count = build_map(
         all_features,
         set(selected_events),
@@ -1644,3 +1431,4 @@ st.markdown('</div>', unsafe_allow_html=True)
 # ==========================================
 time.sleep(1)
 st.rerun()
+
