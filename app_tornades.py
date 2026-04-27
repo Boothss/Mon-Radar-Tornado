@@ -267,18 +267,6 @@ div[data-testid="column"] > div { height: 100%; }
     letter-spacing: 0.05em !important; transition: all 0.15s !important; width: 100% !important;
 }
 .stButton > button:hover { background: #0F1E38 !important; border-color: #3B82F6 !important; }
-/* Cache les boutons layer toggle — déclencheurs invisibles */
-[data-testid="stHorizontalBlock"] .stButton > button {
-    opacity: 0 !important;
-    height: 2px !important;
-    min-height: 0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    border: none !important;
-    background: transparent !important;
-    pointer-events: none !important;
-    position: absolute !important;
-}
 .stSelectbox > div > div, .stMultiSelect > div > div {
     background: #080D1A !important; border: 1px solid #1A2540 !important;
     border-radius: 8px !important; color: #E2E8F0 !important;
@@ -1067,96 +1055,16 @@ with col_map:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── LAYER TOGGLES session state ───────────────────────────────
-    if "active_layers" not in st.session_state:
-        st.session_state.active_layers = {e: True for e in NWS_EVENTS}
-
-    ROW1 = ["Severe Thunderstorm Warning", "Flash Flood Warning", "Tornado Watch"]
-    ROW2 = ["Tornado Warning", "Tornado Emergency"]
-
-    EVENT_SHORT2 = {
-        "Tornado Emergency":           "🟣 T.Emergency",
-        "Tornado Warning":             "🔴 T.Warning",
-        "Tornado Watch":               "🟡 T.Watch",
-        "Severe Thunderstorm Warning": "🟡 T-Storm",
-        "Flash Flood Warning":         "🔵 Flood",
-    }
-
-    # CSS dynamique pour chaque bouton chip
-    chip_css = "<style>"
-    for event in NWS_EVENTS:
-        color = EVENT_COLORS.get(event, "#6B7280")
-        idx   = NWS_EVENTS.index(event)
-        is_on = st.session_state.active_layers.get(event, True)
-        r,g,b = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
-        if is_on:
-            chip_css += f"""
-            div[data-testid="stButton"]:has(button[kind="secondary"][data-chip="{idx}"]) button,
-            #chip_{idx} button {{
-                background: rgba({r},{g},{b},0.15) !important;
-                border: 1px solid rgba({r},{g},{b},0.6) !important;
-                color: {color} !important;
-                box-shadow: 0 0 8px rgba({r},{g},{b},0.25) !important;
-                text-decoration: none !important;
-                opacity: 1 !important;
-            }}"""
-        else:
-            chip_css += f"""
-            #chip_{idx} button {{
-                background: rgba(255,255,255,0.02) !important;
-                border: 1px solid #1A2540 !important;
-                color: #374151 !important;
-                text-decoration: line-through !important;
-                opacity: 0.6 !important;
-                box-shadow: none !important;
-            }}"""
-    chip_css += """
-    div[data-testid="stButton"] button {
-        border-radius: 8px !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 10px !important;
-        font-weight: 600 !important;
-        letter-spacing: .05em !important;
-        padding: 6px 4px !important;
-        width: 100% !important;
-        transition: all 0.2s !important;
-        cursor: pointer !important;
-    }
-    </style>"""
-    st.markdown(chip_css, unsafe_allow_html=True)
-
-    # Ligne 1 — 3 chips côte à côte
-    r1c1, r1c2, r1c3 = st.columns(3)
-    for col, event in zip([r1c1, r1c2, r1c3], ROW1):
-        cnt   = event_counts.get(event, 0)
-        is_on = st.session_state.active_layers.get(event, True)
-        label = f"{EVENT_SHORT2[event]}\n{'  ' + str(cnt)}"
-        with col:
-            if st.button(
-                f"{EVENT_SHORT2[event]} ({cnt})",
-                key=f"chip_{NWS_EVENTS.index(event)}",
-            ):
-                st.session_state.active_layers[event] = not is_on
-                st.rerun()
-
-    # Ligne 2 — 2 chips côte à côte (plus grandes)
-    r2c1, r2c2 = st.columns(2)
-    for col, event in zip([r2c1, r2c2], ROW2):
-        cnt   = event_counts.get(event, 0)
-        is_on = st.session_state.active_layers.get(event, True)
-        with col:
-            if st.button(
-                f"{EVENT_SHORT2[event]} ({cnt})",
-                key=f"chip_{NWS_EVENTS.index(event)}",
-            ):
-                st.session_state.active_layers[event] = not is_on
-                st.rerun()
-
-    # ── CARTE ─────────────────────────────────────────────────────
-    selected_events = [e for e, v in st.session_state.active_layers.items() if v]
+    selected_events = st.multiselect(
+        "VISIBLE LAYERS",
+        options=NWS_EVENTS,
+        default=NWS_EVENTS,
+        label_visibility="collapsed",
+    )
     if not selected_events:
-        selected_events = list(NWS_EVENTS)
+        selected_events = NWS_EVENTS
 
+    # Appel build_map avec les nouveaux paramètres
     radar_map, poly_count = build_map(
         all_features,
         set(selected_events),
@@ -1173,9 +1081,22 @@ with col_map:
         use_container_width=True,
     )
 
-    # ── LÉGENDE sous la carte ─────────────────────────────────────
+    # Légende événements
+    legend_parts = []
+    for e in NWS_EVENTS:
+        col_hex = EVENT_COLORS.get(e, "#6B7280")
+        cnt = event_counts.get(e, 0)
+        legend_parts.append(
+            f'<span style="font-size:11px;font-family:monospace;padding:3px 10px;border-radius:4px;'
+            f'background:rgba(255,255,255,0.03);border:1px solid #1A2540;color:#4A6FA5;">'
+            f'<span style="color:{col_hex};">&#9632;</span> {e} ({cnt})</span>'
+        )
+    legend_html = '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">' + "".join(legend_parts) + "</div>"
+    st.markdown(legend_html, unsafe_allow_html=True)
+
+    # Légende précision polygones
     st.markdown("""
-    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+    <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
       <span style="font-size:10px;font-family:monospace;padding:2px 8px;border-radius:4px;
                    background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);color:#22C55E;">
         ◉ Zone remplie = polygone précis NWS
