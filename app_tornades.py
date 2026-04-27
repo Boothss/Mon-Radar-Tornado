@@ -1071,7 +1071,94 @@ with col_map:
     if "active_layers" not in st.session_state:
         st.session_state.active_layers = {e: True for e in NWS_EVENTS}
 
-    # Appel build_map
+    EVENT_ICONS = {
+        "Tornado Emergency":           "🟣",
+        "Tornado Warning":             "🔴",
+        "Tornado Watch":               "🟡",
+        "Severe Thunderstorm Warning": "🟡",
+        "Flash Flood Warning":         "🔵",
+    }
+    EVENT_SHORT2 = {
+        "Tornado Emergency":           "T. Emergency",
+        "Tornado Warning":             "T. Warning",
+        "Tornado Watch":               "T. Watch",
+        "Severe Thunderstorm Warning": "Severe T-Storm",
+        "Flash Flood Warning":         "Flash Flood",
+    }
+    ROW1 = ["Severe Thunderstorm Warning", "Flash Flood Warning", "Tornado Watch"]
+    ROW2 = ["Tornado Warning", "Tornado Emergency"]
+
+    # ── LIGNE 1 — 3 chips côte à côte ────────────────────────────
+    r1c1, r1c2, r1c3 = st.columns(3)
+    for col, event in zip([r1c1, r1c2, r1c3], ROW1):
+        color  = EVENT_COLORS.get(event, "#6B7280")
+        cnt    = event_counts.get(event, 0)
+        is_on  = st.session_state.active_layers.get(event, True)
+        icon   = EVENT_ICONS[event]
+        short  = EVENT_SHORT2[event]
+        r,g,b  = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
+        idx    = NWS_EVENTS.index(event)
+        if is_on:
+            cs = f"background:rgba({r},{g},{b},0.12);border:1px solid rgba({r},{g},{b},0.55);color:{color};box-shadow:0 0 6px rgba({r},{g},{b},0.2);"
+            cc = color
+        else:
+            cs = "background:rgba(255,255,255,0.02);border:1px solid #1A2540;color:#374151;text-decoration:line-through;"
+            cc = "#374151"
+        with col:
+            st.markdown(f"""
+            <div style="{cs}border-radius:8px;padding:6px 4px;text-align:center;
+                        font-family:monospace;font-size:9px;line-height:1.4;
+                        transition:all 0.2s;cursor:pointer;">
+              <div>{icon} {short}</div>
+              <div style="font-size:13px;font-weight:700;color:{cc};">{cnt}</div>
+            </div>""", unsafe_allow_html=True)
+            if st.button("toggle", key=f"chip_{idx}", label_visibility="collapsed"):
+                st.session_state.active_layers[event] = not is_on
+                st.rerun()
+
+    # ── LIGNE 2 — 2 chips côte à côte (plus grandes) ─────────────
+    r2c1, r2c2 = st.columns(2)
+    for col, event in zip([r2c1, r2c2], ROW2):
+        color  = EVENT_COLORS.get(event, "#6B7280")
+        cnt    = event_counts.get(event, 0)
+        is_on  = st.session_state.active_layers.get(event, True)
+        icon   = EVENT_ICONS[event]
+        short  = EVENT_SHORT2[event]
+        r,g,b  = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
+        idx    = NWS_EVENTS.index(event)
+        if is_on:
+            cs = f"background:rgba({r},{g},{b},0.15);border:1px solid rgba({r},{g},{b},0.65);color:{color};box-shadow:0 0 10px rgba({r},{g},{b},0.3);"
+            cc = "#FFFFFF"
+        else:
+            cs = "background:rgba(255,255,255,0.02);border:1px solid #1A2540;color:#374151;text-decoration:line-through;"
+            cc = "#374151"
+        with col:
+            st.markdown(f"""
+            <div style="{cs}border-radius:10px;padding:8px 6px;text-align:center;
+                        font-family:monospace;font-size:10px;font-weight:600;
+                        line-height:1.5;transition:all 0.2s;cursor:pointer;">
+              <div>{icon} {short}</div>
+              <div style="font-size:16px;font-weight:800;color:{cc};">{cnt}</div>
+            </div>""", unsafe_allow_html=True)
+            if st.button("toggle", key=f"chip_{idx}", label_visibility="collapsed"):
+                st.session_state.active_layers[event] = not is_on
+                st.rerun()
+
+    # CSS — cache les boutons natifs Streamlit sous les chips
+    st.markdown("""
+    <style>
+    div[data-testid="column"] .stButton > button {
+        opacity: 0 !important; height: 4px !important;
+        min-height: 0 !important; padding: 0 !important;
+        margin: 0 !important; border: none !important;
+        background: transparent !important; width: 100% !important;
+        cursor: pointer !important; position: relative !important;
+        top: -52px !important; z-index: 10 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── CARTE ─────────────────────────────────────────────────────
     selected_events = [e for e, v in st.session_state.active_layers.items() if v]
     if not selected_events:
         selected_events = list(NWS_EVENTS)
@@ -1092,128 +1179,7 @@ with col_map:
         use_container_width=True,
     )
 
-    # Légende événements
-    # ── CHIPS TOGGLE sous la carte ────────────────────────────────
-    # Ligne 1 : moins critiques (3 chips)
-    ROW1 = ["Severe Thunderstorm Warning", "Flash Flood Warning", "Tornado Watch"]
-    # Ligne 2 : plus dangereux (2 chips grandes)
-    ROW2 = ["Tornado Warning", "Tornado Emergency"]
-
-    EVENT_ICONS = {
-        "Tornado Emergency":           "🟣",
-        "Tornado Warning":             "🔴",
-        "Tornado Watch":               "🟡",
-        "Severe Thunderstorm Warning": "🟡",
-        "Flash Flood Warning":         "🔵",
-    }
-    EVENT_SHORT2 = {
-        "Tornado Emergency":           "T. Emergency",
-        "Tornado Warning":             "T. Warning",
-        "Tornado Watch":               "T. Watch",
-        "Severe Thunderstorm Warning": "Severe T-Storm",
-        "Flash Flood Warning":         "Flash Flood",
-    }
-
-    # Ligne 1 — 3 colonnes
-    r1c1, r1c2, r1c3 = st.columns(3)
-    row1_cols = [r1c1, r1c2, r1c3]
-    for col, event in zip(row1_cols, ROW1):
-        color    = EVENT_COLORS.get(event, "#6B7280")
-        cnt      = event_counts.get(event, 0)
-        is_on    = st.session_state.active_layers.get(event, True)
-        icon     = EVENT_ICONS.get(event, "●")
-        short    = EVENT_SHORT2.get(event, event)
-        r,g,b    = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
-        idx      = NWS_EVENTS.index(event)
-
-        if is_on:
-            chip_style = (
-                f"background:rgba({r},{g},{b},0.12);"
-                f"border:1px solid rgba({r},{g},{b},0.55);"
-                f"color:{color};"
-                f"box-shadow:0 0 6px rgba({r},{g},{b},0.2);"
-            )
-            count_color = color
-        else:
-            chip_style  = "background:rgba(255,255,255,0.02);border:1px solid #1A2540;color:#374151;text-decoration:line-through;"
-            count_color = "#374151"
-
-        with col:
-            st.markdown(f"""
-            <div style="{chip_style}border-radius:8px;padding:6px 8px;
-                        text-align:center;font-family:monospace;
-                        font-size:10px;line-height:1.4;margin-top:6px;
-                        transition:all 0.2s;">
-              <div>{icon} {short}</div>
-              <div style="font-size:12px;font-weight:700;color:{count_color};">{cnt}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            if st.button(f"{'✓' if is_on else '○'}", key=f"chip_{idx}"):
-                st.session_state.active_layers[event] = not is_on
-                st.rerun()
-
-    # Ligne 2 — 2 colonnes (plus grandes, plus impactantes)
-    r2c1, r2c2 = st.columns(2)
-    row2_cols = [r2c1, r2c2]
-    for col, event in zip(row2_cols, ROW2):
-        color    = EVENT_COLORS.get(event, "#6B7280")
-        cnt      = event_counts.get(event, 0)
-        is_on    = st.session_state.active_layers.get(event, True)
-        icon     = EVENT_ICONS.get(event, "●")
-        short    = EVENT_SHORT2.get(event, event)
-        r,g,b    = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
-        idx      = NWS_EVENTS.index(event)
-
-        if is_on:
-            chip_style = (
-                f"background:rgba({r},{g},{b},0.15);"
-                f"border:1px solid rgba({r},{g},{b},0.65);"
-                f"color:{color};"
-                f"box-shadow:0 0 10px rgba({r},{g},{b},0.3);"
-            )
-            count_color = "#FFFFFF"
-            glow = f"animation:chipglow_{idx} 2s infinite;" if cnt > 0 else ""
-        else:
-            chip_style  = "background:rgba(255,255,255,0.02);border:1px solid #1A2540;color:#374151;text-decoration:line-through;"
-            count_color = "#374151"
-            glow        = ""
-
-        with col:
-            st.markdown(f"""
-            <div style="{chip_style}{glow}border-radius:10px;padding:8px 10px;
-                        text-align:center;font-family:monospace;
-                        font-size:11px;font-weight:600;line-height:1.5;
-                        margin-top:6px;transition:all 0.2s;">
-              <div>{icon} {short}</div>
-              <div style="font-size:16px;font-weight:800;color:{count_color};">{cnt}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            if st.button(f"{'✓' if is_on else '○'}", key=f"chip_{idx}"):
-                st.session_state.active_layers[event] = not is_on
-                st.rerun()
-
-    # CSS pour cacher les boutons toggle natifs sous les chips
-    st.markdown("""
-    <style>
-    /* Rend les boutons toggle invisibles mais cliquables */
-    div[data-testid="column"] .stButton > button {
-        opacity: 0 !important;
-        height: 4px !important;
-        min-height: 0 !important;
-        padding: 0 !important;
-        margin: -4px 0 0 0 !important;
-        border: none !important;
-        background: transparent !important;
-        width: 100% !important;
-        cursor: pointer !important;
-        position: relative !important;
-        top: -50px !important;
-        z-index: 10 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # Légende précision polygones
+    # ── LÉGENDE sous la carte ─────────────────────────────────────
     st.markdown("""
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
       <span style="font-size:10px;font-family:monospace;padding:2px 8px;border-radius:4px;
