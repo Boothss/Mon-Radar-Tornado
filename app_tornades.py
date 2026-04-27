@@ -146,13 +146,6 @@ html, body, [data-testid="stAppViewContainer"],
     font-family: 'Space Grotesk', sans-serif !important;
 }
 
-    header[data-testid="stHeader"]  { display: none !important; }
-[data-testid="stToolbar"]       { display: none !important; }
-[data-testid="stDecoration"]    { display: none !important; }
-[data-testid="stStatusWidget"]  { display: none !important; }
-#MainMenu                        { display: none !important; }
-footer                           { display: none !important; }
-
 .block-container { padding: 0 !important; max-width: 100% !important; }
 [data-testid="stSidebar"] { background: #080D1A !important; border-right: 1px solid #1A2540; }
 
@@ -1029,18 +1022,11 @@ with col_map:
     </div>
     """, unsafe_allow_html=True)
 
-    selected_events = st.multiselect(
-        "VISIBLE LAYERS",
-        options=NWS_EVENTS,
-        default=NWS_EVENTS,
-        label_visibility="collapsed",
-    )
-    if not selected_events:
-        selected_events = NWS_EVENTS
+  
 
     radar_map, poly_count = build_map(
         all_features,
-        set(selected_events),
+        
         tornado_positions,
         trajectories,
         spc_groups,
