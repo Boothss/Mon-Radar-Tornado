@@ -1022,14 +1022,21 @@ with col_map:
     </div>
     """, unsafe_allow_html=True)
 
-    selected_events = st.multiselect(
-        "VISIBLE LAYERS",
-        options=NWS_EVENTS,
-        default=NWS_EVENTS,
-        label_visibility="collapsed",
-    )
-    if not selected_events:
-        selected_events = NWS_EVENTS
+   # Dans col_map, à la place du st.multiselect :
+layer_html = build_layer_toggle(
+    NWS_EVENTS,
+    EVENT_COLORS,
+    event_counts,
+    default_active=list(st.session_state.show_events),
+)
+
+result = components.html(layer_html, height=80, scrolling=False)
+
+# Récupération via session_state (le composant envoie via postMessage)
+# Pour une intégration complète, initialise show_events en session_state :
+selected_events = list(st.session_state.show_events)
+if not selected_events:
+    selected_events = NWS_EVENTS
 
     radar_map, poly_count = build_map(
         all_features,
@@ -1400,3 +1407,142 @@ st.markdown('</div>', unsafe_allow_html=True)
 # ==========================================
 time.sleep(1)
 st.rerun()
+
+
+# ==========================================
+# 🎛️  LAYER TOGGLE — custom HTML component
+# ==========================================
+import streamlit.components.v1 as components
+
+def build_layer_toggle(nws_events, event_colors, event_counts, default_active=None):
+    """Retourne selected_events via un composant HTML immersif."""
+    
+    if default_active is None:
+        default_active = nws_events
+
+    # Labels courts pour affichage dans les chips
+    SHORT_LABELS = {
+        "Tornado Emergency":           "Tornado Emergency",
+        "Tornado Warning":             "Tornado Warning",
+        "Tornado Watch":               "Tornado Watch",
+        "Severe Thunderstorm Warning": "Severe T-Storm Warn.",
+        "Flash Flood Warning":         "Flash Flood Warning",
+    }
+
+    chips_js_array = []
+    for e in nws_events:
+        color = event_colors.get(e, "#6B7280")
+        count = event_counts.get(e, 0)
+        label = SHORT_LABELS.get(e, e)
+        active_str = "true" if e in default_active else "false"
+        chips_js_array.append(
+            f'{{event:"{e}",color:"{color}",count:{count},label:"{label}",active:{active_str}}}'
+        )
+
+    chips_js = "[" + ",".join(chips_js_array) + "]"
+
+    html = f"""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+    *{{box-sizing:border-box;margin:0;padding:0;}}
+    body{{background:transparent;font-family:'JetBrains Mono',monospace;padding:8px 0 4px;}}
+
+    .layers-header{{display:flex;align-items:center;gap:8px;margin-bottom:10px;}}
+    .layers-label{{font-size:10px;letter-spacing:.18em;color:#4A6FA5;text-transform:uppercase;}}
+    .layers-count{{font-size:9px;padding:2px 8px;border-radius:20px;background:#0F1E38;
+                   color:#4A6FA5;border:1px solid #1A2540;letter-spacing:.05em;}}
+
+    .chips-row{{display:flex;gap:6px;flex-wrap:wrap;}}
+
+    .chip{{display:flex;align-items:center;gap:6px;padding:6px 12px 6px 10px;
+           border-radius:8px;border:1px solid #1A2540;background:#080D1A;
+           cursor:pointer;transition:all 0.18s ease;user-select:none;}}
+    .chip:hover{{border-color:#2A3F60;}}
+
+    .chip-dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;
+               transition:box-shadow 0.18s ease;}}
+    .chip-label{{font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+                 color:#4A6FA5;transition:color 0.18s ease;white-space:nowrap;}}
+    .chip-count{{font-size:9px;padding:1px 6px;border-radius:20px;
+                 background:#0F1E38;color:#374151;transition:all 0.18s ease;margin-left:2px;}}
+
+    .chip.active .chip-label{{color:#E2E8F0;}}
+
+    @keyframes pulse-dot{{0%,100%{{opacity:1;}}50%{{opacity:0.35;}}}}
+    .chip.active .chip-dot{{animation:pulse-dot 2.2s infinite;}}
+    </style>
+
+    <div class="layers-header">
+      <span class="layers-label">Visible Layers</span>
+      <span class="layers-count" id="badge">5 / 5</span>
+    </div>
+    <div class="chips-row" id="chips-container"></div>
+
+    <script>
+    const DATA = {chips_js};
+    const container = document.getElementById('chips-container');
+    const badge = document.getElementById('badge');
+
+    function hexToRgb(hex){{
+      const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+      return r+','+g+','+b;
+    }}
+
+    function updateBadge(){{
+      const active = document.querySelectorAll('.chip.active').length;
+      badge.textContent = active+' / '+DATA.length;
+    }}
+
+    function sendState(){{
+      const active = [...document.querySelectorAll('.chip.active')].map(c=>c.dataset.event);
+      window.parent.postMessage({{type:'streamlit:setComponentValue',value:active}}, '*');
+    }}
+
+    DATA.forEach(d=>{{
+      const rgb = hexToRgb(d.color);
+      const chip = document.createElement('div');
+      chip.className = 'chip' + (d.active?' active':'');
+      chip.dataset.event = d.event;
+      chip.style.cssText = d.active
+        ? `background:rgba(${{rgb}},0.08);border-color:rgba(${{rgb}},0.45);`
+        : '';
+
+      chip.innerHTML = `
+        <div class="chip-dot" style="background:${{d.color}};${{d.active?'box-shadow:0 0 8px rgba('+rgb+',0.6);':''}}"></div>
+        <span class="chip-label">${{d.label}}</span>
+        <span class="chip-count" style="${{d.active?'background:rgba('+rgb+',0.15);color:${{d.color}};border:1px solid rgba('+rgb+',0.3);':''}}">
+          ${{d.count}}
+        </span>`;
+
+      chip.addEventListener('click',()=>{{
+        const isActive = chip.classList.contains('active');
+        const totalActive = document.querySelectorAll('.chip.active').length;
+        if(isActive && totalActive===1) return;
+
+        chip.classList.toggle('active');
+        const nowActive = chip.classList.contains('active');
+        const dot = chip.querySelector('.chip-dot');
+        const lbl = chip.querySelector('.chip-label');
+        const cnt = chip.querySelector('.chip-count');
+
+        if(nowActive){{
+          chip.style.cssText=`background:rgba(${{rgb}},0.08);border-color:rgba(${{rgb}},0.45);`;
+          dot.style.cssText=`background:${{d.color}};box-shadow:0 0 8px rgba(${{rgb}},0.6);`;
+          cnt.style.cssText=`background:rgba(${{rgb}},0.15);color:${{d.color}};border:1px solid rgba(${{rgb}},0.3);`;
+        }}else{{
+          chip.style.cssText='';
+          dot.style.cssText=`background:${{d.color}};`;
+          cnt.style.cssText='';
+        }}
+        updateBadge();
+        sendState();
+      }});
+
+      container.appendChild(chip);
+    }});
+
+    updateBadge();
+    sendState();
+    </script>
+    """
+    return html
