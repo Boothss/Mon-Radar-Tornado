@@ -1022,11 +1022,18 @@ with col_map:
     </div>
     """, unsafe_allow_html=True)
 
-  
+    selected_events = st.multiselect(
+        "VISIBLE LAYERS",
+        options=NWS_EVENTS,
+        default=NWS_EVENTS,
+        label_visibility="collapsed",
+    )
+    if not selected_events:
+        selected_events = NWS_EVENTS
 
     radar_map, poly_count = build_map(
         all_features,
-        
+        set(selected_events),
         tornado_positions,
         trajectories,
         spc_groups,
