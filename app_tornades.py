@@ -861,23 +861,23 @@ def build_layer_toggle_html(nws_events, event_colors, event_counts, active_event
     <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
     *{{box-sizing:border-box;margin:0;padding:0;}}
-    body{{background:transparent;font-family:'JetBrains Mono',monospace;padding:6px 0 4px;}}
+    body{{background:transparent;font-family:'JetBrains Mono',monospace;padding:4px 0 2px;}}
 
-    .lh{{display:flex;align-items:center;gap:8px;margin-bottom:10px;}}
+    .lh{{display:flex;align-items:center;gap:8px;margin-bottom:7px;}}
     .ll{{font-size:10px;letter-spacing:.18em;color:#4A6FA5;text-transform:uppercase;}}
     .lc{{font-size:9px;padding:2px 8px;border-radius:20px;background:#0F1E38;color:#4A6FA5;
          border:1px solid #1A2540;letter-spacing:.05em;}}
 
-    .cr{{display:flex;gap:6px;flex-wrap:wrap;}}
+    .cr{{display:flex;gap:5px;flex-wrap:wrap;row-gap:5px;}}
 
-    .chip{{display:flex;align-items:center;gap:6px;padding:6px 12px 6px 10px;
+    .chip{{display:flex;align-items:center;gap:5px;padding:5px 10px 5px 8px;
            border-radius:8px;cursor:pointer;transition:opacity 0.15s;
            user-select:none;text-decoration:none;}}
     .chip:hover{{opacity:0.8;}}
 
-    .dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;}}
-    .lbl{{font-size:10px;letter-spacing:.07em;text-transform:uppercase;white-space:nowrap;}}
-    .cnt{{font-size:9px;padding:1px 6px;border-radius:20px;margin-left:2px;}}
+    .dot{{width:6px;height:6px;border-radius:50%;flex-shrink:0;}}
+    .lbl{{font-size:9px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;}}
+    .cnt{{font-size:8px;padding:1px 5px;border-radius:20px;margin-left:1px;}}
 
     @keyframes pd{{0%,100%{{opacity:1;}}50%{{opacity:0.3;}}}}
     </style>
@@ -1116,7 +1116,7 @@ with col_map:
         active_events=set(selected_events),
         base_url="",
     )
-    components.html(toggle_html, height=72, scrolling=False)
+    components.html(toggle_html, height=110, scrolling=False)
 
     # ==========================================
     # Construire et afficher la carte
