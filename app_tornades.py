@@ -267,7 +267,6 @@ div[data-testid="column"] > div { height: 100%; }
     letter-spacing: 0.05em !important; transition: all 0.15s !important; width: 100% !important;
 }
 .stButton > button:hover { background: #0F1E38 !important; border-color: #3B82F6 !important; }
-
 .stSelectbox > div > div, .stMultiSelect > div > div {
     background: #080D1A !important; border: 1px solid #1A2540 !important;
     border-radius: 8px !important; color: #E2E8F0 !important;
@@ -803,7 +802,92 @@ def export_json(features):
         })
     return json.dumps(simplified, indent=2, ensure_ascii=False)
 
+# ==========================================
+# 🎛️  LAYER TOGGLE — via st.query_params (fonctionnel)
+# ==========================================
+def build_layer_toggle_html(nws_events, event_colors, event_counts, active_events, base_url):
+    """
+    Génère des chips HTML cliquables. Chaque clic reconstruit l'URL
+    avec ?layers=EventA&layers=EventB et navigue → Streamlit rerun → carte mise à jour.
+    """
+    chips_html = ""
+    active_set = set(active_events)
+    n_active   = len(active_set)
+    n_total    = len(nws_events)
 
+    for e in nws_events:
+        color   = event_colors.get(e, "#6B7280")
+        count   = event_counts.get(e, 0)
+        label   = SHORT_LABELS.get(e, e)
+        is_on   = e in active_set
+
+        r = int(color[1:3], 16)
+        g = int(color[3:5], 16)
+        b = int(color[5:7], 16)
+
+        # Styles actif / inactif
+        if is_on:
+            chip_style  = f"background:rgba({r},{g},{b},0.08);border:1px solid rgba({r},{g},{b},0.45);"
+            dot_style   = f"background:{color};box-shadow:0 0 8px rgba({r},{g},{b},0.65);"
+            lbl_style   = "color:#E2E8F0;"
+            cnt_style   = f"background:rgba({r},{g},{b},0.15);color:{color};border:1px solid rgba({r},{g},{b},0.3);"
+            dot_anim    = "animation:pd 2.2s infinite;"
+        else:
+            chip_style  = "background:#080D1A;border:1px solid #1A2540;"
+            dot_style   = f"background:{color};"
+            lbl_style   = "color:#4A6FA5;"
+            cnt_style   = "background:#0F1E38;color:#374151;border:1px solid transparent;"
+            dot_anim    = ""
+
+        # Nouvelle sélection après clic
+        if is_on and n_active > 1:
+            new_active = [x for x in nws_events if x in active_set and x != e]
+        elif not is_on:
+            new_active = list(active_set) + [e]
+        else:
+            new_active = list(active_set)  # pas de changement si dernier actif
+
+        params = "&".join(f"layers={x.replace(' ', '+')}" for x in new_active)
+        href   = f"?{params}"
+
+        chips_html += f"""
+        <a href="{href}" class="chip" style="{chip_style}" title="{e}">
+          <div class="dot" style="{dot_style}{dot_anim}"></div>
+          <span class="lbl" style="{lbl_style}">{label}</span>
+          <span class="cnt" style="{cnt_style}">{count}</span>
+        </a>"""
+
+    return f"""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+    *{{box-sizing:border-box;margin:0;padding:0;}}
+    body{{background:transparent;font-family:'JetBrains Mono',monospace;padding:6px 0 4px;}}
+
+    .lh{{display:flex;align-items:center;gap:8px;margin-bottom:10px;}}
+    .ll{{font-size:10px;letter-spacing:.18em;color:#4A6FA5;text-transform:uppercase;}}
+    .lc{{font-size:9px;padding:2px 8px;border-radius:20px;background:#0F1E38;color:#4A6FA5;
+         border:1px solid #1A2540;letter-spacing:.05em;}}
+
+    .cr{{display:flex;gap:6px;flex-wrap:wrap;}}
+
+    .chip{{display:flex;align-items:center;gap:6px;padding:6px 12px 6px 10px;
+           border-radius:8px;cursor:pointer;transition:opacity 0.15s;
+           user-select:none;text-decoration:none;}}
+    .chip:hover{{opacity:0.8;}}
+
+    .dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;}}
+    .lbl{{font-size:10px;letter-spacing:.07em;text-transform:uppercase;white-space:nowrap;}}
+    .cnt{{font-size:9px;padding:1px 6px;border-radius:20px;margin-left:2px;}}
+
+    @keyframes pd{{0%,100%{{opacity:1;}}50%{{opacity:0.3;}}}}
+    </style>
+
+    <div class="lh">
+      <span class="ll">Visible Layers</span>
+      <span class="lc">{n_active} / {n_total}</span>
+    </div>
+    <div class="cr">{chips_html}</div>
+    """
 
 # ==========================================
 # 🔄  SESSION STATE INIT
@@ -817,7 +901,22 @@ if "known_alert_ids"      not in st.session_state: st.session_state.known_alert_
 if "email_enabled"        not in st.session_state: st.session_state.email_enabled        = True
 if "emails_sent"          not in st.session_state: st.session_state.emails_sent          = 0
 if "tornado_trajectories" not in st.session_state: st.session_state.tornado_trajectories = {}
-if "layer_selected" not in st.session_state: st.session_state.layer_selected = set(NWS_EVENTS)
+if "layer_selected"       not in st.session_state: st.session_state.layer_selected       = list(NWS_EVENTS)
+
+# ── Lire les layers actifs depuis l'URL (?layers=Tornado+Warning&layers=...)
+try:
+    _qp_raw = st.query_params.get_all("layers")
+except AttributeError:
+    try:
+        _qp_raw = st.query_params["layers"]
+        if isinstance(_qp_raw, str):
+            _qp_raw = [_qp_raw]
+    except (KeyError, TypeError):
+        _qp_raw = []
+
+_valid_layers = [x.replace("+", " ") for x in (_qp_raw or []) if x.replace("+", " ") in NWS_EVENTS]
+if _valid_layers:
+    st.session_state.layer_selected = _valid_layers
 
 # ==========================================
 # 🖥️  TOPBAR
@@ -1005,10 +1104,19 @@ with col_map:
     </div>
     """, unsafe_allow_html=True)
 
-    # selected_events = session state (mis à jour par les légendes cliquables)
-    selected_events = st.session_state.layer_selected
-    if not selected_events:
-        selected_events = set(NWS_EVENTS)
+    # ==========================================
+    # 🎛️  LAYER TOGGLE — chips cliquables via query_params
+    # ==========================================
+    selected_events = st.session_state.layer_selected or list(NWS_EVENTS)
+
+    toggle_html = build_layer_toggle_html(
+        NWS_EVENTS,
+        EVENT_COLORS,
+        event_counts,
+        active_events=set(selected_events),
+        base_url="",
+    )
+    components.html(toggle_html, height=72, scrolling=False)
 
     # ==========================================
     # Construire et afficher la carte
@@ -1029,94 +1137,23 @@ with col_map:
         use_container_width=True,
     )
 
-    # ── Légendes cliquables — components.html avec navigation parent ──
-    # Lire la sélection courante depuis query_params (mis à jour par le HTML)
-    _layers_param = []
-    try:
-        _layers_param = st.query_params.get_all("layers")
-    except Exception:
-        try:
-            v = st.query_params.get("layers")
-            _layers_param = [v] if isinstance(v, str) else (v or [])
-        except Exception:
-            pass
-    _decoded = [x.replace("%20", " ").replace("+", " ") for x in _layers_param]
-    _valid   = [x for x in _decoded if x in NWS_EVENTS]
-    if _valid:
-        st.session_state.layer_selected = set(_valid)
-        selected_events = st.session_state.layer_selected
-
-    # Construire le HTML des badges cliquables
-    import json as _json
-    _badges_data = []
+    # Légende événements
+    legend_parts = []
     for e in NWS_EVENTS:
-        col_hex   = EVENT_COLORS.get(e, "#6B7280")
-        cnt       = event_counts.get(e, 0)
+        col_hex = EVENT_COLORS.get(e, "#6B7280")
+        cnt     = event_counts.get(e, 0)
         is_active = e in selected_events
-        r = int(col_hex[1:3], 16)
-        g = int(col_hex[3:5], 16)
-        b = int(col_hex[5:7], 16)
-        _badges_data.append({
-            "event": e, "color": col_hex, "r": r, "g": g, "b": b,
-            "cnt": cnt, "active": is_active,
-        })
-
-    _badges_json = _json.dumps(_badges_data)
-    _active_json = _json.dumps(list(selected_events))
-
-    _legend_html = f"""
-    <style>
-    *{{box-sizing:border-box;margin:0;padding:0;}}
-    body{{background:transparent;padding:0;margin:0;}}
-    .wrap{{display:flex;gap:8px;flex-wrap:wrap;padding:2px 0;}}
-    .badge{{
-        display:inline-flex;align-items:center;gap:5px;
-        font-size:11px;font-family:'JetBrains Mono',monospace;
-        padding:3px 10px;border-radius:4px;cursor:pointer;
-        transition:opacity 0.2s,background 0.15s;
-        white-space:nowrap;user-select:none;
-    }}
-    .badge.off{{opacity:0.32;text-decoration:line-through;}}
-    .badge:hover{{opacity:1!important;}}
-    </style>
-    <div class="wrap" id="wrap"></div>
-    <script>
-    const DATA   = {_badges_json};
-    const wrap   = document.getElementById('wrap');
-    let active   = new Set({_active_json});
-
-    function buildUrl(){{
-        const params = [...active].map(e=>'layers='+encodeURIComponent(e)).join('&');
-        return window.parent.location.pathname+'?'+params;
-    }}
-
-    DATA.forEach(d=>{{
-        const r=d.r,g=d.g,b=d.b;
-        const badge = document.createElement('span');
-        badge.className = 'badge'+(d.active?'':' off');
-        badge.textContent = '\u25A0 '+d.event+' ('+d.cnt+')';
-        badge.style.cssText =
-            'background:rgba('+r+','+g+','+b+',0.08);'+
-            'border:1px solid rgba('+r+','+g+','+b+',0.3);'+
-            'color:'+d.color+';';
-
-        badge.addEventListener('click',()=>{{
-            if(active.has(d.event)){{
-                if(active.size===1) return;
-                active.delete(d.event);
-                badge.classList.add('off');
-            }} else {{
-                active.add(d.event);
-                badge.classList.remove('off');
-            }}
-            window.parent.location.href = buildUrl();
-        }});
-        wrap.appendChild(badge);
-    }});
-    </script>
-    """
-    components.html(_legend_html, height=60, scrolling=False)
-    st.markdown('</div>', unsafe_allow_html=True)
+        opacity = "1" if is_active else "0.35"
+        legend_parts.append(
+            f'<span style="font-size:11px;font-family:monospace;padding:3px 10px;border-radius:4px;'
+            f'opacity:{opacity};'
+            f'background:rgba({int(col_hex[1:3],16)},{int(col_hex[3:5],16)},{int(col_hex[5:7],16)},0.08);'
+            f'border:1px solid rgba({int(col_hex[1:3],16)},{int(col_hex[3:5],16)},{int(col_hex[5:7],16)},0.3);'
+            f'color:{col_hex};">'
+            f'&#9632; {e} ({cnt})</span>'
+        )
+    legend_html = '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">' + "".join(legend_parts) + "</div>"
+    st.markdown(legend_html, unsafe_allow_html=True)
 
     # Légende précision polygones
     st.markdown("""
