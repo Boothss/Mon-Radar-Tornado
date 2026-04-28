@@ -268,20 +268,23 @@ div[data-testid="column"] > div { height: 100%; }
 }
 .stButton > button:hover { background: #0F1E38 !important; border-color: #3B82F6 !important; }
 
-/* Boutons de légende — transparents, superposés sur le HTML */
-[data-testid="stButton"] button[kind="secondary"]:has(> div > p:empty),
-div[data-testid="column"] .stButton > button {
-    position: absolute !important;
-    top: 0 !important; left: 0 !important;
-    width: 100% !important; height: 100% !important;
-    opacity: 0 !important;
-    cursor: pointer !important;
-    z-index: 10 !important;
-    padding: 0 !important;
-    border: none !important;
+/* Boutons de légende — minimalistes, discrets */
+.stButton > button[data-testid="baseButton-secondary"] {
     background: transparent !important;
+    color: #1A2540 !important;
+    border: 1px solid #0F1E38 !important;
+    font-size: 10px !important;
+    padding: 2px 4px !important;
+    margin-top: 2px !important;
+    height: 18px !important;
+    min-height: unset !important;
+    opacity: 0.4 !important;
 }
-div[data-testid="column"] { position: relative !important; }
+.stButton > button[data-testid="baseButton-secondary"]:hover {
+    opacity: 1 !important;
+    border-color: #3B82F6 !important;
+    color: #3B82F6 !important;
+}
 .stSelectbox > div > div, .stMultiSelect > div > div {
     background: #080D1A !important; border: 1px solid #1A2540 !important;
     border-radius: 8px !important; color: #E2E8F0 !important;
@@ -1043,38 +1046,46 @@ with col_map:
         use_container_width=True,
     )
 
-    # ── Légendes cliquables — toggle layers ──
-    st.markdown('<div style="margin-top:10px;">', unsafe_allow_html=True)
-    leg_cols = st.columns(len(NWS_EVENTS))
-    for i, e in enumerate(NWS_EVENTS):
-        col_hex  = EVENT_COLORS.get(e, "#6B7280")
-        cnt      = event_counts.get(e, 0)
+    # ── Légendes cliquables — style original + st.button invisible par-dessus ──
+    legend_html_parts = []
+    for e in NWS_EVENTS:
+        col_hex   = EVENT_COLORS.get(e, "#6B7280")
+        cnt       = event_counts.get(e, 0)
         is_active = e in selected_events
         r = int(col_hex[1:3], 16)
         g = int(col_hex[3:5], 16)
         b = int(col_hex[5:7], 16)
-        opacity   = "1" if is_active else "0.3"
-        strike    = "line-through" if not is_active else "none"
-        short     = e.replace("Tornado ", "T. ").replace("Severe Thunderstorm Warning", "T-Storm Warn.").replace("Flash Flood Warning", "Flash Flood")
-        with leg_cols[i]:
-            # Bouton stylisé HTML
-            st.markdown(f'''
-            <div style="opacity:{opacity};transition:opacity 0.2s;">
-              <div style="font-size:9px;font-family:monospace;padding:4px 8px;border-radius:5px;
-                          background:rgba({r},{g},{b},0.08);border:1px solid rgba({r},{g},{b},0.35);
-                          color:{col_hex};text-align:center;text-decoration:{strike};
-                          white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;">
-                ■ {short} ({cnt})
-              </div>
-            </div>''', unsafe_allow_html=True)
-            # Vrai bouton Streamlit invisible par-dessus
-            if st.button("​", key=f"leg_{e}", help=f"{'Masquer' if is_active else 'Afficher'} {e}"):
+        opacity = "1" if is_active else "0.35"
+        text_deco = "line-through" if not is_active else "none"
+        legend_html_parts.append(
+            f'<span style="font-size:11px;font-family:monospace;padding:3px 10px;border-radius:4px;'
+            f'opacity:{opacity};text-decoration:{text_deco};transition:opacity 0.2s;'
+            f'background:rgba({r},{g},{b},0.08);'
+            f'border:1px solid rgba({r},{g},{b},0.3);'
+            f'color:{col_hex};">'
+            f'&#9632; {e} ({cnt})</span>'
+        )
+    st.markdown(
+        '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
+        + "".join(legend_html_parts) + "</div>",
+        unsafe_allow_html=True
+    )
+    # Boutons invisibles alignés sous les badges
+    btn_cols = st.columns(len(NWS_EVENTS))
+    for i, e in enumerate(NWS_EVENTS):
+        is_active = e in selected_events
+        with btn_cols[i]:
+            if st.button(
+                "▲" if is_active else "▼",
+                key=f"leg_{e}",
+                help=f"{'Masquer' if is_active else 'Afficher'} {e}",
+                use_container_width=True,
+            ):
                 if is_active and len(selected_events) > 1:
                     st.session_state.layer_selected = selected_events - {e}
                 elif not is_active:
                     st.session_state.layer_selected = selected_events | {e}
                 st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
 
     # Légende précision polygones
     st.markdown("""
