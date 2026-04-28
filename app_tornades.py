@@ -809,59 +809,30 @@ def export_json(features):
     return json.dumps(simplified, indent=2, ensure_ascii=False)
 
 # ==========================================
-# 🎛️  LAYER TOGGLE — via st.query_params (fonctionnel)
+# 🎛️  LAYER TOGGLE — via window.parent.location (fonctionnel)
 # ==========================================
-def build_layer_toggle_html(nws_events, event_colors, event_counts, active_events, base_url):
+def build_layer_toggle_html(nws_events, event_colors, event_counts, active_events, base_url=""):
     """
-    Génère des chips HTML cliquables. Chaque clic reconstruit l'URL
-    avec ?layers=EventA&layers=EventB et navigue → Streamlit rerun → carte mise à jour.
+    Chips cliquables. Le clic JS navigue via window.parent.location.href
+    pour déclencher un rerun Streamlit avec les query params mis à jour.
     """
-    chips_html = ""
     active_set = set(active_events)
     n_active   = len(active_set)
     n_total    = len(nws_events)
 
+    # Construire les données JSON pour JS
+    import json as _json
+    chips_data = []
     for e in nws_events:
-        color   = event_colors.get(e, "#6B7280")
-        count   = event_counts.get(e, 0)
-        label   = SHORT_LABELS.get(e, e)
-        is_on   = e in active_set
-
-        r = int(color[1:3], 16)
-        g = int(color[3:5], 16)
-        b = int(color[5:7], 16)
-
-        # Styles actif / inactif
-        if is_on:
-            chip_style  = f"background:rgba({r},{g},{b},0.08);border:1px solid rgba({r},{g},{b},0.45);"
-            dot_style   = f"background:{color};box-shadow:0 0 8px rgba({r},{g},{b},0.65);"
-            lbl_style   = "color:#E2E8F0;"
-            cnt_style   = f"background:rgba({r},{g},{b},0.15);color:{color};border:1px solid rgba({r},{g},{b},0.3);"
-            dot_anim    = "animation:pd 2.2s infinite;"
-        else:
-            chip_style  = "background:#080D1A;border:1px solid #1A2540;"
-            dot_style   = f"background:{color};"
-            lbl_style   = "color:#4A6FA5;"
-            cnt_style   = "background:#0F1E38;color:#374151;border:1px solid transparent;"
-            dot_anim    = ""
-
-        # Nouvelle sélection après clic
-        if is_on and n_active > 1:
-            new_active = [x for x in nws_events if x in active_set and x != e]
-        elif not is_on:
-            new_active = list(active_set) + [e]
-        else:
-            new_active = list(active_set)  # pas de changement si dernier actif
-
-        params = "&".join(f"layers={x.replace(' ', '+')}" for x in new_active)
-        href   = f"?{params}"
-
-        chips_html += f"""
-        <a href="{href}" class="chip" style="{chip_style}" title="{e}">
-          <div class="dot" style="{dot_style}{dot_anim}"></div>
-          <span class="lbl" style="{lbl_style}">{label}</span>
-          <span class="cnt" style="{cnt_style}">{count}</span>
-        </a>"""
+        chips_data.append({
+            "event": e,
+            "color": event_colors.get(e, "#6B7280"),
+            "count": event_counts.get(e, 0),
+            "label": SHORT_LABELS.get(e, e),
+            "active": e in active_set,
+        })
+    chips_json = _json.dumps(chips_data)
+    all_events_json = _json.dumps(nws_events)
 
     return f"""
     <style>
@@ -878,21 +849,90 @@ def build_layer_toggle_html(nws_events, event_colors, event_counts, active_event
 
     .chip{{display:flex;align-items:center;gap:5px;padding:5px 10px 5px 8px;
            border-radius:8px;cursor:pointer;transition:opacity 0.15s;
-           user-select:none;text-decoration:none;}}
+           user-select:none;border:1px solid #1A2540;background:#080D1A;}}
     .chip:hover{{opacity:0.8;}}
 
     .dot{{width:6px;height:6px;border-radius:50%;flex-shrink:0;}}
-    .lbl{{font-size:9px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;}}
-    .cnt{{font-size:8px;padding:1px 5px;border-radius:20px;margin-left:1px;}}
+    .lbl{{font-size:9px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;color:#4A6FA5;}}
+    .cnt{{font-size:8px;padding:1px 5px;border-radius:20px;margin-left:1px;
+          background:#0F1E38;color:#374151;border:1px solid transparent;}}
 
+    .chip.on .lbl{{color:#E2E8F0;}}
     @keyframes pd{{0%,100%{{opacity:1;}}50%{{opacity:0.3;}}}}
+    .chip.on .dot{{animation:pd 2.2s infinite;}}
     </style>
 
     <div class="lh">
       <span class="ll">Visible Layers</span>
-      <span class="lc">{n_active} / {n_total}</span>
+      <span class="lc" id="badge">{n_active} / {n_total}</span>
     </div>
-    <div class="cr">{chips_html}</div>
+    <div class="cr" id="container"></div>
+
+    <script>
+    const DATA     = {chips_json};
+    const ALL      = {all_events_json};
+    const wrap     = document.getElementById('container');
+    const badge    = document.getElementById('badge');
+    let   active   = new Set(DATA.filter(d=>d.active).map(d=>d.event));
+
+    function rgb(hex){{
+      return parseInt(hex.slice(1,3),16)+','+parseInt(hex.slice(3,5),16)+','+parseInt(hex.slice(5,7),16);
+    }}
+
+    function applyStyle(chip, d, on){{
+      const r   = rgb(d.color);
+      const dot = chip.querySelector('.dot');
+      const lbl = chip.querySelector('.lbl');
+      const cnt = chip.querySelector('.cnt');
+      if(on){{
+        chip.style.background    = 'rgba('+r+',0.08)';
+        chip.style.borderColor   = 'rgba('+r+',0.45)';
+        dot.style.boxShadow      = '0 0 8px rgba('+r+',0.65)';
+        dot.style.animation      = 'pd 2.2s infinite';
+        lbl.style.color          = '#E2E8F0';
+        cnt.style.background     = 'rgba('+r+',0.15)';
+        cnt.style.color          = d.color;
+        cnt.style.borderColor    = 'rgba('+r+',0.3)';
+      }} else {{
+        chip.style.background    = '#080D1A';
+        chip.style.borderColor   = '#1A2540';
+        dot.style.boxShadow      = 'none';
+        dot.style.animation      = 'none';
+        lbl.style.color          = '#4A6FA5';
+        cnt.style.background     = '#0F1E38';
+        cnt.style.color          = '#374151';
+        cnt.style.borderColor    = 'transparent';
+      }}
+    }}
+
+    function navigate(){{
+      const params = [...active].map(e => 'layers='+encodeURIComponent(e)).join('&');
+      window.parent.location.href = window.parent.location.pathname + '?' + params;
+    }}
+
+    DATA.forEach(d => {{
+      const chip = document.createElement('div');
+      chip.className = 'chip' + (d.active ? ' on' : '');
+      chip.innerHTML =
+        '<div class="dot" style="background:'+d.color+';"></div>'+
+        '<span class="lbl">'+d.label+'</span>'+
+        '<span class="cnt">'+d.count+'</span>';
+
+      applyStyle(chip, d, d.active);
+
+      chip.addEventListener('click', () => {{
+        const isOn = active.has(d.event);
+        if(isOn && active.size === 1) return;
+        if(isOn) active.delete(d.event);
+        else     active.add(d.event);
+        applyStyle(chip, d, !isOn);
+        badge.textContent = active.size + ' / ' + ALL.length;
+        navigate();
+      }});
+
+      wrap.appendChild(chip);
+    }});
+    </script>
     """
 
 # ==========================================
@@ -920,7 +960,7 @@ except AttributeError:
     except (KeyError, TypeError):
         _qp_raw = []
 
-_valid_layers = [x.replace("+", " ") for x in (_qp_raw or []) if x.replace("+", " ") in NWS_EVENTS]
+_valid_layers = [x.replace("+", " ").replace("%20", " ") for x in (_qp_raw or []) if x.replace("+", " ").replace("%20", " ") in NWS_EVENTS]
 if _valid_layers:
     st.session_state.layer_selected = _valid_layers
 
@@ -1122,7 +1162,7 @@ with col_map:
         active_events=set(selected_events),
         base_url="",
     )
-    components.html(toggle_html, height=110, scrolling=False)
+    components.html(toggle_html, height=130, scrolling=False)
 
     # ==========================================
     # Construire et afficher la carte
