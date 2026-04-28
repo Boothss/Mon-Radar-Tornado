@@ -281,8 +281,6 @@ div[data-testid="column"] > div { height: 100%; }
 [data-testid="stDownloadButton"] > button:hover { background: rgba(34,197,94,0.15) !important; }
 div[data-testid="stHorizontalBlock"] { gap: 1rem; }
 
-/* Masquer le multiselect natif utilisé comme fallback invisible */
-.hidden-multiselect { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -805,24 +803,65 @@ def export_json(features):
     return json.dumps(simplified, indent=2, ensure_ascii=False)
 
 # ==========================================
-# 🎛️  LAYER TOGGLE — composant HTML immersif
+# 🎛️  LAYER TOGGLE — via st.query_params (fonctionnel)
 # ==========================================
-def build_layer_toggle_html(nws_events, event_colors, event_counts, active_events):
-    chips_data = []
-    for e in nws_events:
-        color  = event_colors.get(e, "#6B7280")
-        count  = event_counts.get(e, 0)
-        label  = SHORT_LABELS.get(e, e)
-        active = "true" if e in active_events else "false"
-        chips_data.append(f'{{event:"{e}",color:"{color}",count:{count},label:"{label}",active:{active}}}')
+def build_layer_toggle_html(nws_events, event_colors, event_counts, active_events, base_url):
+    """
+    Génère des chips HTML cliquables. Chaque clic reconstruit l'URL
+    avec ?layers=EventA&layers=EventB et navigue → Streamlit rerun → carte mise à jour.
+    """
+    chips_html = ""
+    active_set = set(active_events)
+    n_active   = len(active_set)
+    n_total    = len(nws_events)
 
-    chips_js = "[" + ",".join(chips_data) + "]"
+    for e in nws_events:
+        color   = event_colors.get(e, "#6B7280")
+        count   = event_counts.get(e, 0)
+        label   = SHORT_LABELS.get(e, e)
+        is_on   = e in active_set
+
+        r = int(color[1:3], 16)
+        g = int(color[3:5], 16)
+        b = int(color[5:7], 16)
+
+        # Styles actif / inactif
+        if is_on:
+            chip_style  = f"background:rgba({r},{g},{b},0.08);border:1px solid rgba({r},{g},{b},0.45);"
+            dot_style   = f"background:{color};box-shadow:0 0 8px rgba({r},{g},{b},0.65);"
+            lbl_style   = "color:#E2E8F0;"
+            cnt_style   = f"background:rgba({r},{g},{b},0.15);color:{color};border:1px solid rgba({r},{g},{b},0.3);"
+            dot_anim    = "animation:pd 2.2s infinite;"
+        else:
+            chip_style  = "background:#080D1A;border:1px solid #1A2540;"
+            dot_style   = f"background:{color};"
+            lbl_style   = "color:#4A6FA5;"
+            cnt_style   = "background:#0F1E38;color:#374151;border:1px solid transparent;"
+            dot_anim    = ""
+
+        # Nouvelle sélection après clic
+        if is_on and n_active > 1:
+            new_active = [x for x in nws_events if x in active_set and x != e]
+        elif not is_on:
+            new_active = list(active_set) + [e]
+        else:
+            new_active = list(active_set)  # pas de changement si dernier actif
+
+        params = "&".join(f"layers={x.replace(' ', '+')}" for x in new_active)
+        href   = f"?{params}"
+
+        chips_html += f"""
+        <a href="{href}" class="chip" style="{chip_style}" title="{e}">
+          <div class="dot" style="{dot_style}{dot_anim}"></div>
+          <span class="lbl" style="{lbl_style}">{label}</span>
+          <span class="cnt" style="{cnt_style}">{count}</span>
+        </a>"""
 
     return f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
     *{{box-sizing:border-box;margin:0;padding:0;}}
-    body{{background:transparent;font-family:'JetBrains Mono',monospace;padding:6px 0 2px;}}
+    body{{background:transparent;font-family:'JetBrains Mono',monospace;padding:6px 0 4px;}}
 
     .lh{{display:flex;align-items:center;gap:8px;margin-bottom:10px;}}
     .ll{{font-size:10px;letter-spacing:.18em;color:#4A6FA5;text-transform:uppercase;}}
@@ -832,93 +871,22 @@ def build_layer_toggle_html(nws_events, event_colors, event_counts, active_event
     .cr{{display:flex;gap:6px;flex-wrap:wrap;}}
 
     .chip{{display:flex;align-items:center;gap:6px;padding:6px 12px 6px 10px;
-           border-radius:8px;border:1px solid #1A2540;background:#080D1A;
-           cursor:pointer;transition:background 0.18s,border-color 0.18s;user-select:none;}}
-    .chip:hover{{border-color:#2A3F60;background:#0A1220;}}
+           border-radius:8px;cursor:pointer;transition:opacity 0.15s;
+           user-select:none;text-decoration:none;}}
+    .chip:hover{{opacity:0.8;}}
 
-    .dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;transition:box-shadow 0.18s;}}
-    .lbl{{font-size:10px;letter-spacing:.07em;text-transform:uppercase;
-          color:#4A6FA5;transition:color 0.18s;white-space:nowrap;}}
-    .cnt{{font-size:9px;padding:1px 6px;border-radius:20px;background:#0F1E38;
-          color:#374151;border:1px solid transparent;transition:all 0.18s;margin-left:2px;}}
-
-    .chip.on .lbl{{color:#E2E8F0;}}
+    .dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;}}
+    .lbl{{font-size:10px;letter-spacing:.07em;text-transform:uppercase;white-space:nowrap;}}
+    .cnt{{font-size:9px;padding:1px 6px;border-radius:20px;margin-left:2px;}}
 
     @keyframes pd{{0%,100%{{opacity:1;}}50%{{opacity:0.3;}}}}
-    .chip.on .dot{{animation:pd 2.2s infinite;}}
     </style>
 
     <div class="lh">
       <span class="ll">Visible Layers</span>
-      <span class="lc" id="badge">— / {len(nws_events)}</span>
+      <span class="lc">{n_active} / {n_total}</span>
     </div>
-    <div class="cr" id="chips"></div>
-
-    <script>
-    const DATA = {chips_js};
-    const wrap  = document.getElementById('chips');
-    const badge = document.getElementById('badge');
-
-    function rgb(hex){{
-      return parseInt(hex.slice(1,3),16)+','+parseInt(hex.slice(3,5),16)+','+parseInt(hex.slice(5,7),16);
-    }}
-
-    function updateBadge(){{
-      badge.textContent = wrap.querySelectorAll('.chip.on').length + ' / ' + DATA.length;
-    }}
-
-    function applyActive(chip, d, on){{
-      const r = rgb(d.color);
-      const dot = chip.querySelector('.dot');
-      const lbl = chip.querySelector('.lbl');
-      const cnt = chip.querySelector('.cnt');
-      if(on){{
-        chip.classList.add('on');
-        chip.style.background='rgba('+r+',0.08)';
-        chip.style.borderColor='rgba('+r+',0.45)';
-        dot.style.boxShadow='0 0 8px rgba('+r+',0.65)';
-        cnt.style.background='rgba('+r+',0.15)';
-        cnt.style.color=d.color;
-        cnt.style.borderColor='rgba('+r+',0.3)';
-      }} else {{
-        chip.classList.remove('on');
-        chip.style.background='';
-        chip.style.borderColor='';
-        dot.style.boxShadow='none';
-        cnt.style.background='';
-        cnt.style.color='';
-        cnt.style.borderColor='transparent';
-      }}
-    }}
-
-    DATA.forEach(d => {{
-      const chip = document.createElement('div');
-      chip.className = 'chip';
-      chip.dataset.event = d.event;
-
-      chip.innerHTML =
-        '<div class="dot" style="background:'+d.color+';"></div>'+
-        '<span class="lbl">'+d.label+'</span>'+
-        '<span class="cnt">'+d.count+'</span>';
-
-      if(d.active) applyActive(chip, d, true);
-
-      chip.addEventListener('click', () => {{
-        const isOn    = chip.classList.contains('on');
-        const totalOn = wrap.querySelectorAll('.chip.on').length;
-        if(isOn && totalOn === 1) return;
-        applyActive(chip, d, !isOn);
-        updateBadge();
-
-        const selected = [...wrap.querySelectorAll('.chip.on')].map(c => c.dataset.event);
-        window.parent.postMessage({{isStreamlitMessage:true, type:'streamlit:setComponentValue', value:selected}}, '*');
-      }});
-
-      wrap.appendChild(chip);
-    }});
-
-    updateBadge();
-    </script>
+    <div class="cr">{chips_html}</div>
     """
 
 # ==========================================
@@ -933,8 +901,22 @@ if "known_alert_ids"      not in st.session_state: st.session_state.known_alert_
 if "email_enabled"        not in st.session_state: st.session_state.email_enabled        = True
 if "emails_sent"          not in st.session_state: st.session_state.emails_sent          = 0
 if "tornado_trajectories" not in st.session_state: st.session_state.tornado_trajectories = {}
-# Layer toggle — persist les events sélectionnés entre reruns
 if "layer_selected"       not in st.session_state: st.session_state.layer_selected       = list(NWS_EVENTS)
+
+# ── Lire les layers actifs depuis l'URL (?layers=Tornado+Warning&layers=...)
+try:
+    _qp_raw = st.query_params.get_all("layers")
+except AttributeError:
+    try:
+        _qp_raw = st.query_params["layers"]
+        if isinstance(_qp_raw, str):
+            _qp_raw = [_qp_raw]
+    except (KeyError, TypeError):
+        _qp_raw = []
+
+_valid_layers = [x.replace("+", " ") for x in (_qp_raw or []) if x.replace("+", " ") in NWS_EVENTS]
+if _valid_layers:
+    st.session_state.layer_selected = _valid_layers
 
 # ==========================================
 # 🖥️  TOPBAR
@@ -1123,41 +1105,18 @@ with col_map:
     """, unsafe_allow_html=True)
 
     # ==========================================
-    # 🎛️  LAYER TOGGLE — Composant HTML immersif
+    # 🎛️  LAYER TOGGLE — chips cliquables via query_params
     # ==========================================
+    selected_events = st.session_state.layer_selected or list(NWS_EVENTS)
 
-    # 1. Afficher le composant visuel HTML
     toggle_html = build_layer_toggle_html(
         NWS_EVENTS,
         EVENT_COLORS,
         event_counts,
-        active_events=set(st.session_state.layer_selected),
+        active_events=set(selected_events),
+        base_url="",
     )
     components.html(toggle_html, height=72, scrolling=False)
-
-    # 2. Multiselect natif masqué — source de vérité Streamlit
-    #    (invisible via CSS, mais interactif pour le fallback)
-    st.markdown('<div class="hidden-multiselect">', unsafe_allow_html=True)
-    layer_selection = st.multiselect(
-        "layers_hidden",
-        options=NWS_EVENTS,
-        default=st.session_state.layer_selected,
-        key="layer_multiselect",
-        label_visibility="collapsed",
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # 3. Synchroniser la sélection du multiselect natif → session_state
-    #    (le composant HTML envoie postMessage, mais Streamlit ne peut pas
-    #     le lire nativement depuis components.html — on utilise le multiselect
-    #     caché en fallback. Pour changer les layers, l'utilisateur peut aussi
-    #     utiliser le widget caché ou l'URL ?layers= si besoin.)
-    if layer_selection:
-        st.session_state.layer_selected = layer_selection
-
-    selected_events = st.session_state.layer_selected
-    if not selected_events:
-        selected_events = NWS_EVENTS
 
     # ==========================================
     # Construire et afficher la carte
