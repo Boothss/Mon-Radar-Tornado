@@ -268,23 +268,6 @@ div[data-testid="column"] > div { height: 100%; }
 }
 .stButton > button:hover { background: #0F1E38 !important; border-color: #3B82F6 !important; }
 
-/* Boutons de légende — minimalistes, discrets */
-.stButton > button[data-testid="baseButton-secondary"] {
-    background: transparent !important;
-    color: #1A2540 !important;
-    border: 1px solid #0F1E38 !important;
-    font-size: 10px !important;
-    padding: 2px 4px !important;
-    margin-top: 2px !important;
-    height: 18px !important;
-    min-height: unset !important;
-    opacity: 0.4 !important;
-}
-.stButton > button[data-testid="baseButton-secondary"]:hover {
-    opacity: 1 !important;
-    border-color: #3B82F6 !important;
-    color: #3B82F6 !important;
-}
 .stSelectbox > div > div, .stMultiSelect > div > div {
     background: #080D1A !important; border: 1px solid #1A2540 !important;
     border-radius: 8px !important; color: #E2E8F0 !important;
@@ -1046,8 +1029,26 @@ with col_map:
         use_container_width=True,
     )
 
-    # ── Légendes cliquables — style original + st.button invisible par-dessus ──
-    legend_html_parts = []
+    # ── Légendes cliquables — components.html avec navigation parent ──
+    # Lire la sélection courante depuis query_params (mis à jour par le HTML)
+    _layers_param = []
+    try:
+        _layers_param = st.query_params.get_all("layers")
+    except Exception:
+        try:
+            v = st.query_params.get("layers")
+            _layers_param = [v] if isinstance(v, str) else (v or [])
+        except Exception:
+            pass
+    _decoded = [x.replace("%20", " ").replace("+", " ") for x in _layers_param]
+    _valid   = [x for x in _decoded if x in NWS_EVENTS]
+    if _valid:
+        st.session_state.layer_selected = set(_valid)
+        selected_events = st.session_state.layer_selected
+
+    # Construire le HTML des badges cliquables
+    import json as _json
+    _badges_data = []
     for e in NWS_EVENTS:
         col_hex   = EVENT_COLORS.get(e, "#6B7280")
         cnt       = event_counts.get(e, 0)
@@ -1055,37 +1056,67 @@ with col_map:
         r = int(col_hex[1:3], 16)
         g = int(col_hex[3:5], 16)
         b = int(col_hex[5:7], 16)
-        opacity = "1" if is_active else "0.35"
-        text_deco = "line-through" if not is_active else "none"
-        legend_html_parts.append(
-            f'<span style="font-size:11px;font-family:monospace;padding:3px 10px;border-radius:4px;'
-            f'opacity:{opacity};text-decoration:{text_deco};transition:opacity 0.2s;'
-            f'background:rgba({r},{g},{b},0.08);'
-            f'border:1px solid rgba({r},{g},{b},0.3);'
-            f'color:{col_hex};">'
-            f'&#9632; {e} ({cnt})</span>'
-        )
-    st.markdown(
-        '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
-        + "".join(legend_html_parts) + "</div>",
-        unsafe_allow_html=True
-    )
-    # Boutons invisibles alignés sous les badges
-    btn_cols = st.columns(len(NWS_EVENTS))
-    for i, e in enumerate(NWS_EVENTS):
-        is_active = e in selected_events
-        with btn_cols[i]:
-            if st.button(
-                "▲" if is_active else "▼",
-                key=f"leg_{e}",
-                help=f"{'Masquer' if is_active else 'Afficher'} {e}",
-                use_container_width=True,
-            ):
-                if is_active and len(selected_events) > 1:
-                    st.session_state.layer_selected = selected_events - {e}
-                elif not is_active:
-                    st.session_state.layer_selected = selected_events | {e}
-                st.rerun()
+        _badges_data.append({
+            "event": e, "color": col_hex, "r": r, "g": g, "b": b,
+            "cnt": cnt, "active": is_active,
+        })
+
+    _badges_json = _json.dumps(_badges_data)
+    _active_json = _json.dumps(list(selected_events))
+
+    _legend_html = f"""
+    <style>
+    *{{box-sizing:border-box;margin:0;padding:0;}}
+    body{{background:transparent;padding:0;margin:0;}}
+    .wrap{{display:flex;gap:8px;flex-wrap:wrap;padding:2px 0;}}
+    .badge{{
+        display:inline-flex;align-items:center;gap:5px;
+        font-size:11px;font-family:'JetBrains Mono',monospace;
+        padding:3px 10px;border-radius:4px;cursor:pointer;
+        transition:opacity 0.2s,background 0.15s;
+        white-space:nowrap;user-select:none;
+    }}
+    .badge.off{{opacity:0.32;text-decoration:line-through;}}
+    .badge:hover{{opacity:1!important;}}
+    </style>
+    <div class="wrap" id="wrap"></div>
+    <script>
+    const DATA   = {_badges_json};
+    const wrap   = document.getElementById('wrap');
+    let active   = new Set({_active_json});
+
+    function buildUrl(){{
+        const params = [...active].map(e=>'layers='+encodeURIComponent(e)).join('&');
+        return window.parent.location.pathname+'?'+params;
+    }}
+
+    DATA.forEach(d=>{{
+        const r=d.r,g=d.g,b=d.b;
+        const badge = document.createElement('span');
+        badge.className = 'badge'+(d.active?'':' off');
+        badge.textContent = '\u25A0 '+d.event+' ('+d.cnt+')';
+        badge.style.cssText =
+            'background:rgba('+r+','+g+','+b+',0.08);'+
+            'border:1px solid rgba('+r+','+g+','+b+',0.3);'+
+            'color:'+d.color+';';
+
+        badge.addEventListener('click',()=>{{
+            if(active.has(d.event)){{
+                if(active.size===1) return;
+                active.delete(d.event);
+                badge.classList.add('off');
+            }} else {{
+                active.add(d.event);
+                badge.classList.remove('off');
+            }}
+            window.parent.location.href = buildUrl();
+        }});
+        wrap.appendChild(badge);
+    }});
+    </script>
+    """
+    components.html(_legend_html, height=60, scrolling=False)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # Légende précision polygones
     st.markdown("""
