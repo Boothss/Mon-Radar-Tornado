@@ -237,7 +237,8 @@ except AttributeError:
     except (KeyError, TypeError):
         _qp_raw = []
 
-_valid        = [x.replace("+", " ") for x in (_qp_raw or []) if x.replace("+", " ") in NWS_EVENTS]
+# Streamlit décode automatiquement les query params → pas besoin de replace
+_valid        = [x for x in (_qp_raw or []) if x in NWS_EVENTS]
 active_events = set(_valid) if _valid else set(NWS_EVENTS)
 
 # ==========================================
@@ -464,12 +465,9 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         </div>"""
 
         for geom in geometries:
-            if geom.get("type") == "Polygon":
-                poly_list = [geom["coordinates"]]
-            elif geom.get("type") == "MultiPolygon":
-                poly_list = geom["coordinates"]
-            else:
-                continue
+            if geom.get("type") == "Polygon":         poly_list = [geom["coordinates"]]
+            elif geom.get("type") == "MultiPolygon":  poly_list = geom["coordinates"]
+            else: continue
             for poly_coords in poly_list:
                 coords = [[p[1], p[0]] for p in poly_coords[0]]
                 folium.Polygon(
@@ -487,11 +485,9 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
             tooltip="Trajectoire de la tornade",
         ).add_to(m)
         for lat, lon, ts in history[:-1]:
-            folium.CircleMarker(
-                location=[lat, lon], radius=4, color="#FF6B35",
+            folium.CircleMarker(location=[lat, lon], radius=4, color="#FF6B35",
                 fill=True, fill_color="#FF6B35", fill_opacity=0.7,
-                tooltip=f"Position à {ts} UTC",
-            ).add_to(m)
+                tooltip=f"Position à {ts} UTC").add_to(m)
 
     for alert_id, pos in tornado_positions.items():
         if pos['event'] not in show_events: continue
@@ -500,27 +496,22 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
         <div style="font-family:monospace;background:#080D1A;color:#E2E8F0;
                     padding:12px;border-radius:8px;border:1px solid {clr};min-width:220px;">
           <div style="color:{clr};font-size:10px;letter-spacing:.1em;margin-bottom:6px;">
-            🌪️ {pos['event'].upper()} — POSITION LIVE
-          </div>
+            🌪️ {pos['event'].upper()} — POSITION LIVE</div>
           <div style="font-size:13px;font-weight:600;margin-bottom:8px;">{pos['area'][:60]}</div>
           <div style="font-size:11px;color:#94A3B8;">Sévérité : {pos['severity']}</div>
           <div style="font-size:10px;color:#4A6FA5;margin-top:6px;padding-top:6px;border-top:1px solid #1A2540;">
-            📍 Position estimée · centroïde du polygone NWS
-          </div>
+            📍 Position estimée · centroïde du polygone NWS</div>
         </div>"""
         for radius, opacity in [(28, 0.04), (18, 0.08), (10, 0.15)]:
-            folium.CircleMarker(
-                location=[pos['lat'], pos['lon']], radius=radius,
-                color=clr, weight=1, fill=True, fill_color=clr, fill_opacity=opacity,
-            ).add_to(m)
+            folium.CircleMarker(location=[pos['lat'], pos['lon']], radius=radius,
+                color=clr, weight=1, fill=True, fill_color=clr, fill_opacity=opacity).add_to(m)
         folium.Marker(
             location=[pos['lat'], pos['lon']],
             popup=folium.Popup(popup_html, max_width=280),
             tooltip=f"🌪️ LIVE — {pos['event']} · {pos['area'][:40]}",
             icon=folium.Icon(
                 color="purple" if pos['event'] == "Tornado Emergency" else "red",
-                icon="bolt", prefix="fa",
-            ),
+                icon="bolt", prefix="fa"),
         ).add_to(m)
 
     for group in spc_groups:
@@ -538,21 +529,16 @@ def build_map(features, show_events, tornado_positions, trajectories, spc_groups
             <div style="font-family:monospace;background:#080D1A;color:#E2E8F0;
                         padding:12px;border-radius:8px;border:1px solid #FF3B30;min-width:210px;">
               <div style="color:#FF3B30;font-size:10px;letter-spacing:.1em;margin-bottom:6px;">
-                🌪️ TORNADE CONFIRMÉE — SPC
-              </div>
-              <div style="font-size:13px;font-weight:600;margin-bottom:6px;">
-                {rep['location']}, {rep['state']}
-              </div>
+                🌪️ TORNADE CONFIRMÉE — SPC</div>
+              <div style="font-size:13px;font-weight:600;margin-bottom:6px;">{rep['location']}, {rep['state']}</div>
               <div style="font-size:11px;color:#94A3B8;margin-bottom:4px;">
                 Magnitude : <strong style="color:#FF6B6B;">{f_scale}</strong>
-                &nbsp;·&nbsp; {rep['time'][:2]}:{rep['time'][2:4]} UTC
-              </div>
+                &nbsp;·&nbsp; {rep['time'][:2]}:{rep['time'][2:4]} UTC</div>
               {'<div style="font-size:11px;color:#CBD5E1;margin-top:6px;border-top:1px solid #1A2540;padding-top:6px;">'+rep["comments"][:120]+'</div>' if rep['comments'] else ''}
               <div style="font-size:10px;color:#374151;margin-top:8px;">⚠ Données SPC · délai ~10–30 min</div>
             </div>"""
             folium.CircleMarker(
-                location=[rep['lat'], rep['lon']],
-                radius=10 if is_last else 7,
+                location=[rep['lat'], rep['lon']], radius=10 if is_last else 7,
                 color="#FF3B30", weight=2, fill=True, fill_color="#FF3B30",
                 fill_opacity=0.9 if is_last else 0.7,
                 popup=folium.Popup(popup_html, max_width=260),
@@ -644,11 +630,9 @@ if st.session_state.email_enabled:
         if event in EMAIL_TRIGGER_EVENTS and fid and fid not in st.session_state.known_alert_ids:
             onset_dt = parse_time(props.get("onset"))
             new_alerts_to_notify.append({
-                "event":       event,
-                "area":        props.get("areaDesc", "Zone inconnue"),
-                "severity":    props.get("severity", "—"),
-                "certainty":   props.get("certainty", "—"),
-                "onset":       onset_dt.strftime("%Y-%m-%d %H:%M UTC") if onset_dt else "—",
+                "event": event, "area": props.get("areaDesc", "Zone inconnue"),
+                "severity": props.get("severity", "—"), "certainty": props.get("certainty", "—"),
+                "onset": onset_dt.strftime("%Y-%m-%d %H:%M UTC") if onset_dt else "—",
                 "instruction": props.get("instruction", "") or "Mettez-vous à l'abri immédiatement.",
             })
             st.session_state.known_alert_ids.add(fid)
@@ -713,9 +697,7 @@ with col_refresh:
     st.markdown(f"""
     <div class="refresh-bar">
       <span class="refresh-label">NEXT SCAN IN</span>
-      <div class="progress-track">
-        <div class="progress-fill-bar" style="width:{pct}%"></div>
-      </div>
+      <div class="progress-track"><div class="progress-fill-bar" style="width:{pct}%"></div></div>
       <span class="refresh-countdown">{remaining}s</span>
     </div>""", unsafe_allow_html=True)
 
@@ -730,22 +712,13 @@ with col_interval:
         st.session_state.last_fetch = time.time()
 
 with col_email:
-    email_on = st.toggle(
-        "📧 Alertes email", value=st.session_state.email_enabled,
-        help="Reçoit un email dès qu'un Tornado Warning ou Tornado Emergency apparaît",
-    )
+    email_on = st.toggle("📧 Alertes email", value=st.session_state.email_enabled,
+        help="Reçoit un email dès qu'un Tornado Warning ou Tornado Emergency apparaît")
     st.session_state.email_enabled = email_on
     if email_on:
-        st.markdown(
-            f'<div style="font-size:10px;font-family:monospace;color:#22C55E;margin-top:2px;">'
-            f'✓ ACTIF · {st.session_state.emails_sent} envoyé(s)</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(f'<div style="font-size:10px;font-family:monospace;color:#22C55E;margin-top:2px;">✓ ACTIF · {st.session_state.emails_sent} envoyé(s)</div>', unsafe_allow_html=True)
     else:
-        st.markdown(
-            '<div style="font-size:10px;font-family:monospace;color:#4A6FA5;margin-top:2px;">⏸ DÉSACTIVÉ</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div style="font-size:10px;font-family:monospace;color:#4A6FA5;margin-top:2px;">⏸ DÉSACTIVÉ</div>', unsafe_allow_html=True)
 
 # ==========================================
 # 🗺️  MAIN CONTENT: MAP + ALERT LIST
@@ -762,82 +735,117 @@ with col_map:
       <span class="section-badge live">● LIVE</span>
     </div>""", unsafe_allow_html=True)
 
-    # ── Carte ──────────────────────────────────────────────────────────────
     radar_map = build_map(all_features, active_events, tornado_positions, trajectories, spc_groups)
     st_folium(radar_map, width=None, height=480, returned_objects=[], use_container_width=True)
 
     # ==========================================
-    # 🏷️  LÉGENDE — badges cliquables (toggle layer)
+    # 🏷️  LÉGENDE — badges cliquables SANS rechargement de page
     #
-    # Les badges sont VISUELLEMENT IDENTIQUES aux badges de légende habituels.
-    # Actif  → style couleur original (background + border + texte colorés)
-    # Inactif→ même forme mais grisé (couleurs neutres, opacité réduite)
-    # Un clic met à jour ?layers=… → Streamlit rerun → carte mise à jour
-    # Si un seul layer est actif et qu'on clique dessus, rien ne change
-    # (on ne peut pas tout masquer).
+    # Technique : onclick JS → window.parent.history.replaceState()
+    # Met à jour l'URL SANS navigation → aucun reload navigateur.
+    # Le st.rerun() automatique (toutes les ~1s) capte le changement
+    # de query params et met à jour la carte.
     # ==========================================
-    legend_parts = []
+    badge_buttons = []
     for e in NWS_EVENTS:
         col_hex   = EVENT_COLORS.get(e, "#6B7280")
         cnt       = event_counts.get(e, 0)
         is_active = e in active_events
-
         r_c = int(col_hex[1:3], 16)
         g_c = int(col_hex[3:5], 16)
         b_c = int(col_hex[5:7], 16)
 
-        # Calcul de la nouvelle sélection après clic
-        if is_active and len(active_events) > 1:
-            # désactiver cet event
-            new_active = [x for x in NWS_EVENTS if x in active_events and x != e]
-        elif not is_active:
-            # réactiver cet event
-            new_active = sorted(active_events | {e}, key=NWS_EVENTS.index)
-        else:
-            # dernier actif → on ne change rien
-            new_active = list(active_events)
-
-        href = "?" + "&".join(f"layers={x.replace(' ', '+')}" for x in new_active)
-
         if is_active:
-            # ── Style IDENTIQUE au badge original ──
-            badge_style  = (
-                f"background:rgba({r_c},{g_c},{b_c},0.08);"
-                f"border:1px solid rgba({r_c},{g_c},{b_c},0.3);"
-                f"color:{col_hex};"
-            )
+            btn_style    = (f"background:rgba({r_c},{g_c},{b_c},0.08);"
+                            f"border:1px solid rgba({r_c},{g_c},{b_c},0.3);"
+                            f"color:{col_hex};")
             square_color = col_hex
-            extra_style  = ""
+            extra        = ""
         else:
-            # ── Même forme, grisée ──
-            badge_style  = (
-                "background:rgba(30,35,55,0.04);"
-                "border:1px solid rgba(100,110,140,0.15);"
-                "color:#374151;"
-            )
+            btn_style    = ("background:rgba(30,35,55,0.04);"
+                            "border:1px solid rgba(100,110,140,0.15);"
+                            "color:#374151;")
             square_color = "#374151"
-            extra_style  = "opacity:0.45;"
+            extra        = "opacity:0.42;"
 
-        legend_parts.append(
-            f'<a href="{href}" '
-            f'title="{"Masquer" if is_active else "Afficher"} {e}" '
+        # Encode le nom de l'event pour JS (échappe les apostrophes)
+        e_js = e.replace("'", "\\'")
+        badge_buttons.append(
+            f'<button onclick="toggleLayer(\'{e_js}\')" '
             f'style="display:inline-flex;align-items:center;gap:4px;'
-            f'font-size:11px;font-family:monospace;padding:3px 10px;border-radius:4px;'
-            f'text-decoration:none;cursor:pointer;user-select:none;'
-            f'transition:opacity 0.15s;{badge_style}{extra_style}">'
+            f'font-size:11px;font-family:\'JetBrains Mono\',monospace;'
+            f'padding:3px 10px;border-radius:4px;cursor:pointer;user-select:none;'
+            f'transition:opacity 0.15s;outline:none;{btn_style}{extra}">'
             f'<span style="color:{square_color};">&#9632;</span>'
             f'&nbsp;{e} ({cnt})'
-            f'</a>'
+            f'</button>'
         )
 
-    st.markdown(
-        '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
-        + "".join(legend_parts)
-        + "</div>",
-        unsafe_allow_html=True,
-    )
+    # On passe active_events et NWS_EVENTS au JS pour le calcul du toggle
+    active_list_js = json.dumps(sorted(active_events))
+    all_events_js  = json.dumps(NWS_EVENTS)
 
-    # Légende précision polygones (inchangée)
+    legend_component = f"""
+    <style>
+    * {{ box-sizing:border-box; margin:0; padding:0; }}
+    body {{ background:transparent; padding:2px 0; }}
+    button:hover {{ opacity:0.72 !important; transition:opacity 0.15s; }}
+    </style>
+
+    <script>
+    // ── Toggle layer : met à jour l'URL sans recharger la page ──────────────
+    // window.parent = la fenêtre Streamlit (l'iframe components.html est same-origin)
+    var ALL_EVENTS    = {all_events_js};
+    var activeEvents  = {active_list_js};
+
+    function toggleLayer(eventName) {{
+        // Lecture des params actuels dans l'URL parente
+        var parentUrl = new URL(window.parent.location.href);
+        var layers    = parentUrl.searchParams.getAll('layers');
+
+        // Si aucun param présent → tous actifs
+        if (layers.length === 0) {{
+            layers = ALL_EVENTS.slice();
+        }}
+
+        var idx = layers.indexOf(eventName);
+        if (idx >= 0) {{
+            // Event déjà actif → désactiver (sauf si dernier)
+            if (layers.length > 1) {{
+                layers.splice(idx, 1);
+            }}
+        }} else {{
+            // Event inactif → activer
+            layers.push(eventName);
+        }}
+
+        // Rebuild des query params (URLSearchParams gère l'encodage)
+        parentUrl.searchParams.delete('layers');
+        layers.forEach(function(l) {{
+            parentUrl.searchParams.append('layers', l);
+        }});
+
+        // replaceState = change l'URL SANS navigation (pas de rechargement)
+        window.parent.history.replaceState({{}}, '', parentUrl.toString());
+
+        // Feedback visuel immédiat : on met à jour l'opacité du bouton cliqué
+        var btns = document.querySelectorAll('button');
+        btns.forEach(function(btn) {{
+            if (btn.textContent.indexOf(eventName) >= 0) {{
+                btn.style.opacity = (layers.indexOf(eventName) >= 0) ? '1' : '0.42';
+            }}
+        }});
+    }}
+    </script>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    {"".join(badge_buttons)}
+    </div>
+    """
+
+    components.html(legend_component, height=38, scrolling=False)
+
+    # Légende précision polygones (statique, inchangée)
     st.markdown("""
     <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
       <span style="font-size:10px;font-family:monospace;padding:2px 8px;border-radius:4px;
@@ -850,7 +858,7 @@ with col_map:
       </span>
     </div>""", unsafe_allow_html=True)
 
-    # Légende live + SPC (inchangée)
+    # Légende live + SPC (statique, inchangée)
     n_live = len(tornado_positions)
     n_spc  = sum(len(g) for g in spc_groups)
     extras = []
@@ -966,7 +974,6 @@ with col_list:
             r_int = int(color[1:3], 16)
             g_int = int(color[3:5], 16)
             b_int = int(color[5:7], 16)
-
             badge_bg   = f"rgba({r_int},{g_int},{b_int},0.18)"
             tag_bg     = f"rgba({r_int},{g_int},{b_int},0.10)"
             tag_border = f"rgba({r_int},{g_int},{b_int},0.35)"
@@ -1067,17 +1074,11 @@ st.markdown('<div style="padding:1rem 2rem 2rem;">', unsafe_allow_html=True)
 col_csv, col_json, col_reload, _ = st.columns([1, 1, 1, 3])
 
 with col_csv:
-    st.download_button(
-        "⬇ Export CSV", data=export_csv(all_features),
-        file_name=f"vortex_alerts_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-        mime="text/csv",
-    )
+    st.download_button("⬇ Export CSV",  data=export_csv(all_features),
+        file_name=f"vortex_alerts_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",  mime="text/csv")
 with col_json:
-    st.download_button(
-        "⬇ Export JSON", data=export_json(all_features),
-        file_name=f"vortex_alerts_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-        mime="application/json",
-    )
+    st.download_button("⬇ Export JSON", data=export_json(all_features),
+        file_name=f"vortex_alerts_{datetime.now().strftime('%Y%m%d_%H%M')}.json", mime="application/json")
 with col_reload:
     if st.button("↺  Force Scan"):
         fetch_all_alerts.clear()
